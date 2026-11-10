@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#101611">
+  <title>IRON FRONT — 1944</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="app">
+    <canvas id="game" aria-label="Iron Front battlefield"></canvas>
+    <div class="grain"></div>
+    <section id="menu" class="screen">
+      <div class="menu-top"><span class="brand-mark">IF</span><span class="top-copy">EASTERN FRONT · 1944—45</span><span class="status"><i></i> FIELD SERVER ONLINE</span></div>
+      <div class="menu-hero"><div class="hero-kicker">A FRONTLINE WITH NO END</div><h1>IRON<br><em>FRONT</em></h1><p class="hero-sub">THE EASTERN FRONT · 1944</p><div class="hero-rule"></div><p class="hero-desc">Hold the line. Take the ground.<br>The battle ends only when a base falls.</p></div>
+      <nav class="main-nav" aria-label="Main menu">
+        <button class="nav-btn primary" id="playBtn"><span class="nav-icon">▶</span><span>PLAY</span><span class="nav-hint">ENTER THE FRONT</span></button>
+        <button class="nav-btn" id="settingsBtn"><span class="nav-icon">⚙</span><span>SETTINGS</span><span class="nav-hint">CONTROLS & DISPLAY</span></button>
+        <button class="nav-btn" id="helpBtn"><span class="nav-icon">?</span><span>HELP</span><span class="nav-hint">FIELD MANUAL</span></button>
+      </nav>
+      <div class="menu-bottom"><span>OPERATION: BROKEN LINE</span><span>ALPHA FIELD BUILD <b>0.4.4</b></span><span>ROTATE DEVICE TO LANDSCAPE</span></div>
+    </section>
+    <section id="teamScreen" class="screen hidden">
+      <button class="back-btn" data-back>← <span>BACK</span></button><div class="modal-heading"><span class="eyebrow">CHOOSE YOUR SIDE</span><h2>Pick a faction</h2><p>Two armies. One contested front.</p></div>
+      <div class="faction-grid">
+        <button class="faction-card ussr" data-team="ussr"><div class="faction-flag">☭</div><div class="faction-meta">ALLIED FORCES · EAST</div><h3>USSR</h3><p>Red Army</p><span class="faction-cta">DEPLOY <b>↗</b></span></button>
+        <button class="faction-card germany" data-team="germany"><div class="faction-flag">✠</div><div class="faction-meta">AXIS FORCES · WEST</div><h3>GERMANY</h3><p>Wehrmacht</p><span class="faction-cta">DEPLOY <b>↗</b></span></button>
+      </div>
+      <div class="team-note"><span>◈</span> 10 AI SOLDIERS PER SIDE · 20 TOTAL</div>
+    </section>
+    <section id="settingsScreen" class="screen hidden">
+      <button class="back-btn" data-back>← <span>BACK</span></button><div class="modal-heading"><span class="eyebrow">FIELD PREFERENCES</span><h2>Settings</h2><p>Make the front feel right for you.</p></div>
+      <div class="settings-card"><label for="language">LANGUAGE <select id="language"><option value="en">English</option><option value="ru">Русский</option></select></label><label for="sensitivity">LOOK SENSITIVITY <span id="sensValue">1.0×</span><input id="sensitivity" type="range" min="0.4" max="2" step="0.1" value="1"></label><label class="toggle-row"><span>SCREEN SHAKE</span><input id="shakeToggle" type="checkbox" checked><span class="toggle"></span></label><label class="toggle-row"><span>HIGH CONTRAST HUD</span><input id="contrastToggle" type="checkbox"><span class="toggle"></span></label></div>
+    </section>
+    <section id="helpScreen" class="screen hidden">
+      <button class="back-btn" data-back>← <span>BACK</span></button><div class="modal-heading"><span class="eyebrow">FIELD MANUAL · 01</span><h2>How to survive</h2><p>Move together. Watch the flanks. Keep moving.</p></div>
+      <div class="help-grid"><article><span class="help-number">01</span><h3>CONTROL THE FRONT</h3><p>Capture A, B and C by staying inside their marked zones. Push past the enemy line to capture their base and end the battle.</p></article><article><span class="help-number">02</span><h3>FIGHT SMART</h3><p>Use your rifle, aim down sights and reload. Find mounted machine guns, vehicles and supply crates across the battlefield.</p></article><article><span class="help-number">03</span><h3>MAKE COVER</h3><p>Dig a shallow trench with your shovel. Trenches and ruined walls can keep you alive when the artillery starts.</p></article><article><span class="help-number">04</span><h3>KEYS & CONTROLS</h3><p><kbd>W A S D</kbd> move · <kbd>MOUSE</kbd> aim/fire · <kbd>R</kbd> reload · <kbd>E</kbd> interact · <kbd>Q</kbd> dig · <kbd>M</kbd> map · <kbd>1—3</kbd> weapon</p></article></div>
+    </section>
+    <section id="orientation" class="orientation hidden"><div class="rotate-icon">▱<span>↻</span></div><b>ROTATE TO LANDSCAPE</b><span>The front is wider than it is tall.</span></section>
+    <section id="hud" class="hidden" aria-live="polite">
+      <header class="hud-top"><div class="match-brand"><span>IF</span><div><b>IRON FRONT</b><small>OPERATION · BROKEN LINE</small></div></div><div class="match-score"><div class="score-side red"><small>USSR</small><b id="scoreUSSR">50</b></div><div class="objectives" id="objectives"></div><div class="score-side blue"><small>GERMANY</small><b id="scoreGermany">50</b></div></div><button class="pause-button" id="pauseBtn">Ⅱ</button></header>
+      <div class="zone-status" id="zoneStatus">◈ NO OBJECTIVE IN RANGE</div>
+      <div class="compass" id="compass"><span>N</span><div></div><span>E</span><div></div><span>S</span><div></div><span>W</span></div>
+      <div class="killfeed" id="killfeed"></div><div class="center-message" id="centerMessage"></div>
+      <aside class="weapon-hud"><div class="weapon-name" id="weaponName">MOSIN–NAGANT</div><div class="ammo"><strong id="ammoNow">5</strong><span>/ <span id="ammoReserve">35</span></span></div><div class="weapon-caption" id="weaponCaption">BOLT-ACTION RIFLE</div></aside>
+      <div class="health-hud"><span>VITALS</span><div><i id="healthBar"></i></div><b id="healthNum">100</b></div>
+      <div class="objective-callout" id="objectiveCallout"><span>OBJECTIVE</span><b>CAPTURE THE FRONT</b></div>
+      <div class="hit-marker" id="hitMarker">×</div><div class="damage-vignette"></div><div class="death-screen hidden" id="deathScreen"><b>WOUNDED IN ACTION</b><span>Returning to the line...</span></div>
+      <div class="vehicle-damage hidden" id="vehicleDamage"><b>VEHICLE IMPACT</b><span id="damageText">ARMOR STRUCK</span><div id="damageSketch">◈</div></div>
+      <div class="interact-prompt" id="interactPrompt"></div>
+      <div class="touch-controls" id="touchControls"><div class="joystick" id="joystick"><div></div></div><div class="touch-actions"><button data-touch="aim">AIM</button><button data-touch="reload">R</button><button data-touch="interact">E</button><button data-touch="fire" class="fire-touch">FIRE</button><button data-touch="jump">JUMP</button></div></div>
+      <div class="map-panel" id="mapPanel"><canvas id="minimap" width="230" height="160"></canvas><span>N ↑</span></div>
+      <div class="pause-overlay hidden" id="pauseOverlay"><div class="pause-card"><span class="eyebrow">TEMPORARY CEASEFIRE</span><h2>PAUSED</h2><button id="resumeBtn" class="action-btn">RETURN TO BATTLE</button><button id="menuBtn" class="quiet-btn">LEAVE FRONT</button></div></div>
+      <div class="end-overlay hidden" id="endOverlay"><div class="pause-card"><span class="eyebrow">OPERATION COMPLETE</span><h2 id="endTitle">THE FRONT HAS FALLEN</h2><p id="endText"></p><button id="againBtn" class="action-btn">FIGHT AGAIN</button><button id="endMenuBtn" class="quiet-btn">MAIN MENU</button></div></div>
+    </section>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
