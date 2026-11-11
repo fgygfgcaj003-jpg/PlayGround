@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-cd "$(dirname "$0")"
-/usr/bin/time -p node "${RUNTIME_DIR:?}/scripts/default-capture.mjs"
+
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+cd "$PROJECT_DIR"
+
+/usr/bin/time -p test -n "${CAPTURE_URL:-}" 
+/usr/bin/time -p test -n "${CAPTURE_DIR:-}"
+/usr/bin/time -p node --check capture-runner.mjs
+exec /usr/bin/time -p node capture-runner.mjs
