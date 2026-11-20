@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#071212" />
+  <title>Neon Coast — City Run</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="game-shell">
+    <canvas id="game" aria-label="Neon Coast open city driving game"></canvas>
+    <div class="vignette"></div>
+    <header class="topbar">
+      <div class="brand"><span class="brand-mark">NC</span><div><b>NEON COAST</b><small>FREE ROAM · SAN PALOMA</small></div></div>
+      <div class="district"><span class="live-dot"></span><span id="districtName">DOWNTOWN</span><i> / </i><span id="clock">19:42</span></div>
+      <div class="top-right"><span class="weather">◒ &nbsp;CLEAR</span><span class="profile">JR</span></div>
+    </header>
+    <section class="mission-card" id="missionCard">
+      <div class="mission-icon">✦</div><div><small>OPEN CITY // QUICK PLAY</small><strong id="missionTitle">Make your own route</strong><span id="missionText">Find a ride. The whole city is yours.</span></div>
+      <button id="missionClose" aria-label="Dismiss mission">×</button>
+    </section>
+    <section class="status-card">
+      <div class="status-label"><span class="tiny-dot"></span> CITY STATUS <span class="status-live">LIVE</span></div>
+      <div class="status-row"><span>TRAFFIC</span><b>● ● ● ○ ○</b></div>
+      <div class="status-row"><span>WANTED</span><b id="wanted">☆☆☆☆☆</b></div>
+      <div class="status-row"><span>VEHICLE</span><b id="vehicleName">ON FOOT</b></div>
+    </section>
+    <section class="minimap-card"><canvas id="minimap" width="180" height="180"></canvas><div class="map-label">SAN PALOMA <span>N</span></div><div class="map-coords" id="coords">34.08° N&nbsp; 118.24° W</div></section>
+    <div class="speed-card" id="speedCard"><div class="speed-value"><b id="speed">00</b><small>KM/H</small></div><div class="speed-meter"><i id="speedFill"></i></div><div class="vehicle-tag" id="vehicleTag">CITY COUPE <span>▰</span></div></div>
+    <div class="interaction" id="interaction"><kbd>E</kbd><span>GET IN</span></div>
+    <div class="toast" id="toast"></div>
+    <footer class="controls"><div class="control-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd><span>DRIVE / WALK</span></div><div class="control-hint"><kbd>E</kbd><span>ENTER / EXIT</span></div><div class="control-hint"><kbd>SPACE</kbd><span>HANDBRAKE</span></div><div class="control-hint"><kbd>M</kbd><span>PHONE MAP</span></div></footer>
+    <section class="phone" id="phone"><div class="phone-notch"></div><div class="phone-head"><span>9:41</span><span>●●● ▰</span></div><div class="phone-brand">PALOMA <b>OS</b></div><div class="phone-screen"><div class="phone-greeting">Good evening,<br><b>Jordan.</b></div><div class="phone-weather">◒ &nbsp; 22° &nbsp; Clear skies</div><div class="phone-apps"><button data-app="Map"><i>⌖</i>MAP</button><button data-app="Transit"><i>↗</i>TRANSIT</button><button data-app="Garage"><i>▰</i>GARAGE</button><button data-app="Messages"><i>✉</i>MESSAGES</button></div><div class="phone-tip">CITY GUIDE <span>›</span><small>Trains, metro & monorail are yours to explore.</small></div></div><div class="phone-home">Swipe up to close · press M</div></section>
+    <div class="start-overlay" id="startOverlay"><div class="start-panel"><div class="start-eyebrow">A CITY WITHOUT A SCRIPT</div><h1>NEON<br><em>COAST</em></h1><p>Sunset is falling on San Paloma.<br>Find a ride. Find your way.</p><button id="startButton">ENTER THE CITY <span>↗</span></button><div class="start-foot"><span>FREE ROAM MODE</span><span>WASD TO MOVE</span></div></div><div class="start-credit">SAN PALOMA, CALIFORNIA &nbsp; · &nbsp; 34°08′N 118°14′W</div></div>
+  </main>
+  <script src="game.js"></script>
+</body>
+</html>
