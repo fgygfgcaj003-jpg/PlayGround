@@ -4,6 +4,51 @@ import { BLOCK_CENTER, NODE_POS, CITY_EXTENT } from './city.js';
 
 const $ = (id) => document.getElementById(id);
 
+const TEXT = {
+  en: {
+    startGame: 'Start Game', newLife: 'New life in Nova City', continue: 'Continue', settings: 'Settings',
+    settingsCaption: 'Video · audio · controls', chooseControls: 'Choose how to play', pcMode: 'PC mode',
+    pcModeDesc: 'Keyboard and mouse', phoneMode: 'Phone mode', phoneModeDesc: 'Touch controls',
+    language: 'Language', liveSimulation: 'LIVE SIMULATION', menuKicker: 'AN OPEN-WORLD LIFE SIMULATOR',
+    menuTitle: 'Your city.', menuTitleAccent: 'Every life in it.',
+    menuCopy: 'A living metropolis of towers, traffic, weather and consequence. Walk it, drive it, fly it, or just watch the city breathe.',
+    districts: 'districts', vehicles: 'vehicles', citizens: 'citizens', liveSystems: 'live systems',
+    pcControls: 'WASD move · Mouse look · E interact · Tab phone · M map · Esc pause', buildInfo: 'WebGL · Procedural build',
+    move: 'Move', sprint: 'Sprint', jump: 'Jump', interact: 'Interact', phone: 'Phone',
+    graphics: 'Graphics quality', shadows: 'Shadows', volume: 'Master volume', invert: 'Invert camera Y',
+    timeOfDay: 'Time of day', cameraFov: 'Camera FOV', resetSave: 'Reset save data', clearSave: 'Clear save',
+    applyClose: 'Apply & Close', backCity: 'Back to Nova City', system: 'SYSTEM',
+  },
+  ru: {
+    startGame: 'Начать игру', newLife: 'Новая жизнь в Нова-Сити', continue: 'Продолжить', settings: 'Настройки',
+    settingsCaption: 'Графика · звук · управление', chooseControls: 'Выберите управление', pcMode: 'Режим ПК',
+    pcModeDesc: 'Клавиатура и мышь', phoneMode: 'Режим телефона', phoneModeDesc: 'Сенсорное управление',
+    language: 'Язык', liveSimulation: 'ЖИВАЯ СИМУЛЯЦИЯ', menuKicker: 'СИМУЛЯТОР ЖИЗНИ В ОТКРЫТОМ МИРЕ',
+    menuTitle: 'Твой город.', menuTitleAccent: 'Твоя история.',
+    menuCopy: 'Живой мегаполис с небоскрёбами, движением, погодой и последствиями. Гуляй, води, летай или наблюдай за городом.',
+    districts: 'районов', vehicles: 'машин', citizens: 'жителей', liveSystems: 'систем',
+    pcControls: 'WASD движение · Мышь обзор · E действие · Tab телефон · M карта · Esc пауза', buildInfo: 'WebGL · Процедурный мир',
+    move: 'Идти', sprint: 'Бег', jump: 'Прыжок', interact: 'Действие', phone: 'Телефон',
+    graphics: 'Качество графики', shadows: 'Тени', volume: 'Общая громкость', invert: 'Обратить ось камеры Y',
+    timeOfDay: 'Время суток', cameraFov: 'Поле зрения', resetSave: 'Сбросить сохранение', clearSave: 'Очистить',
+    applyClose: 'Применить и закрыть', backCity: 'Вернуться в Нова-Сити', system: 'СИСТЕМА',
+  },
+  zh: {
+    startGame: '开始游戏', newLife: '在新星城开启新生活', continue: '继续游戏', settings: '设置',
+    settingsCaption: '画面 · 音频 · 控制', chooseControls: '选择操作方式', pcMode: '电脑模式',
+    pcModeDesc: '键盘和鼠标', phoneMode: '手机模式', phoneModeDesc: '触屏操作',
+    language: '语言', liveSimulation: '城市实时模拟', menuKicker: '开放世界生活模拟器',
+    menuTitle: '你的城市。', menuTitleAccent: '你的每一种人生。',
+    menuCopy: '充满高楼、车流、天气与机遇的鲜活都市。步行、驾驶、飞行，或静静感受城市脉搏。',
+    districts: '个城区', vehicles: '辆车辆', citizens: '位市民', liveSystems: '项动态系统',
+    pcControls: 'WASD 移动 · 鼠标视角 · E 互动 · Tab 手机 · M 地图 · Esc 暂停', buildInfo: 'WebGL · 程序生成城市',
+    move: '移动', sprint: '冲刺', jump: '跳跃', interact: '互动', phone: '手机',
+    graphics: '画面质量', shadows: '阴影', volume: '主音量', invert: '反转镜头 Y 轴',
+    timeOfDay: '时间', cameraFov: '视野范围', resetSave: '重置存档', clearSave: '清除存档',
+    applyClose: '应用并关闭', backCity: '返回新星城', system: '系统',
+  },
+};
+
 const DISTRICT_COLORS = {
   downtown: '#26333f', midtown: '#34373a', industrial: '#3a3b36', suburb: '#2f3c2f',
   waterfront: '#2f4048', residential: '#333a3a', park: '#243d29', airport: '#39382f',
@@ -40,7 +85,17 @@ export class UI {
 
   binding() {
     const g = this.game;
-    $('btn-start').addEventListener('click', () => g.startNewGame());
+    $('btn-start').addEventListener('click', () => {
+      const picker = $('mode-picker');
+      picker.classList.toggle('hidden');
+    });
+    document.querySelectorAll('[data-start-mode]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        g.settings.mode = btn.dataset.startMode;
+        g.saveSettings();
+        g.startNewGame();
+      });
+    });
     $('btn-continue').addEventListener('click', () => g.continueGame());
     $('btn-settings-menu').addEventListener('click', () => this.openSettings());
     $('btn-resume').addEventListener('click', () => this.closeOverlay());
@@ -66,11 +121,86 @@ export class UI {
       this.toast('GPS waypoint set');
       g.audio?.click();
     });
+    const languageSelect = $('language-select');
+    if (languageSelect) {
+      languageSelect.value = g.settings.language || 'en';
+      languageSelect.addEventListener('change', () => {
+        g.settings.language = languageSelect.value;
+        g.saveSettings();
+        this.applyLanguage();
+      });
+    }
+    this.bindTouchControls();
+    this.applyLanguage();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         if (this.overlay) { e.preventDefault(); this.closeOverlay(); }
         else if (this.game.mode !== 'menu') { e.preventDefault(); this.game.togglePause(); }
       }
+    });
+  }
+
+  applyPlayMode() {
+    const mode = this.game.settings.mode === 'phone' ? 'phone' : 'pc';
+    document.body.classList.toggle('mode-phone', mode === 'phone');
+    document.body.classList.toggle('mode-pc', mode === 'pc');
+  }
+
+  applyLanguage() {
+    const lang = TEXT[this.game.settings.language] ? this.game.settings.language : 'en';
+    this.game.settings.language = lang;
+    document.documentElement.lang = lang;
+    const dict = TEXT[lang];
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const key = el.dataset.i18n;
+      if (dict[key]) el.textContent = dict[key];
+    });
+    const select = $('language-select');
+    if (select) select.value = lang;
+  }
+
+  bindTouchControls() {
+    const stick = $('touch-stick');
+    const thumb = $('touch-stick-thumb');
+    if (!stick) return;
+    const updateStick = (e) => {
+      const rect = stick.getBoundingClientRect();
+      const touch = e.touches?.[0] || e;
+      let x = (touch.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+      let y = (touch.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+      const mag = Math.hypot(x, y);
+      if (mag > 1) { x /= mag; y /= mag; }
+      this.game.touch.x = x;
+      this.game.touch.y = y;
+      if (thumb) thumb.style.transform = `translate(${x * 28}px, ${y * 28}px)`;
+    };
+    const resetStick = () => {
+      this.game.touch.x = 0; this.game.touch.y = 0;
+      if (thumb) thumb.style.transform = '';
+    };
+    stick.addEventListener('pointerdown', (e) => { stick.setPointerCapture?.(e.pointerId); updateStick(e); });
+    stick.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') updateStick(e); });
+    stick.addEventListener('pointerup', resetStick);
+    stick.addEventListener('pointercancel', resetStick);
+
+    document.querySelectorAll('[data-touch-action]').forEach(btn => {
+      const action = btn.dataset.touchAction;
+      const press = (e) => {
+        e.preventDefault();
+        if (action === 'map') this.game.toggleOverlay('map');
+        else if (action === 'phone') this.game.toggleOverlay('phone');
+        else if (action === 'interact') this.game.interact();
+        else if (action === 'jump') this.game.touch.jump = true;
+        else if (action === 'sprint') this.game.touch.sprint = true;
+      };
+      const release = (e) => {
+        e.preventDefault();
+        if (action === 'jump') this.game.touch.jump = false;
+        if (action === 'sprint') this.game.touch.sprint = false;
+      };
+      btn.addEventListener('pointerdown', press);
+      btn.addEventListener('pointerup', release);
+      btn.addEventListener('pointercancel', release);
     });
   }
 
@@ -92,6 +222,7 @@ export class UI {
   }
 
   hideMenu() {
+    this.applyPlayMode();
     this.el.menu.classList.remove('on');
     setTimeout(() => this.el.menu.classList.add('hidden'), 700);
     this.el.hud.classList.remove('hidden');
@@ -532,6 +663,15 @@ export class UI {
         <option value="night" ${s.time === 'night' ? 'selected' : ''}>Night</option>
       </select></div>
       <div class="setting-row"><span>Camera FOV</span><input data-set="fov" type="range" min="55" max="90" value="${s.fov}"></div>
+      <div class="setting-row"><span>${TEXT[this.game.settings.language]?.language || 'Language'}</span><select data-set="language">
+        <option value="en" ${s.language === 'en' ? 'selected' : ''}>English</option>
+        <option value="ru" ${s.language === 'ru' ? 'selected' : ''}>Русский</option>
+        <option value="zh" ${s.language === 'zh' ? 'selected' : ''}>中文</option>
+      </select></div>
+      <div class="setting-row"><span>${TEXT[this.game.settings.language]?.chooseControls || 'Play mode'}</span><select data-set="mode">
+        <option value="pc" ${s.mode === 'pc' ? 'selected' : ''}>PC</option>
+        <option value="phone" ${s.mode === 'phone' ? 'selected' : ''}>Phone</option>
+      </select></div>
       <div class="setting-row"><span>Reset save data</span><button data-reset="1">Clear save</button></div>`;
     container.querySelectorAll('[data-set]').forEach(el => {
       el.addEventListener('change', () => {

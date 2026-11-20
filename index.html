@@ -23,27 +23,32 @@
     <div class="menu-bg"></div>
     <header class="menu-top">
       <div class="brand"><span class="brand-mark">N</span><span>NOVA CITY</span></div>
-      <div class="menu-links"><span id="menu-clock">06:20</span><span>·</span><span>LIVE SIMULATION</span></div>
+      <div class="menu-links"><span id="menu-clock">06:20</span><span>·</span><span data-i18n="liveSimulation">LIVE SIMULATION</span><label class="language-picker"><span data-i18n="language">Language</span><select id="language-select" aria-label="Language"><option value="en">English</option><option value="ru">Русский</option><option value="zh">中文</option></select></label></div>
     </header>
     <div class="menu-body">
-      <div class="menu-kicker">AN OPEN-WORLD LIFE SIMULATOR</div>
-      <h1>Your city.<br><em>Every life in it.</em></h1>
-      <p class="menu-copy">A living metropolis of towers, traffic, weather and consequence. Walk it, drive it, fly it, or just watch the city breathe.</p>
+      <div class="menu-kicker" data-i18n="menuKicker">AN OPEN-WORLD LIFE SIMULATOR</div>
+      <h1><span data-i18n="menuTitle">Your city.</span><br><em data-i18n="menuTitleAccent">Every life in it.</em></h1>
+      <p class="menu-copy" data-i18n="menuCopy">A living metropolis of towers, traffic, weather and consequence. Walk it, drive it, fly it, or just watch the city breathe.</p>
       <div class="menu-actions">
-        <button id="btn-start" class="btn primary"><span>Start Game</span><small>New life in Nova City</small></button>
-        <button id="btn-continue" class="btn ghost"><span>Continue</span><small id="continue-meta">No saved city</small></button>
-        <button id="btn-settings-menu" class="btn ghost"><span>Settings</span><small>Video · audio · controls</small></button>
+        <button id="btn-start" class="btn primary"><span data-i18n="startGame">Start Game</span><small data-i18n="newLife">New life in Nova City</small></button>
+        <button id="btn-continue" class="btn ghost"><span data-i18n="continue">Continue</span><small id="continue-meta">No saved city</small></button>
+        <button id="btn-settings-menu" class="btn ghost"><span data-i18n="settings">Settings</span><small data-i18n="settingsCaption">Video · audio · controls</small></button>
+      </div>
+      <div id="mode-picker" class="mode-picker hidden">
+        <div class="mode-picker-title" data-i18n="chooseControls">Choose how to play</div>
+        <button class="btn ghost" data-start-mode="pc"><span data-i18n="pcMode">PC mode</span><small data-i18n="pcModeDesc">Keyboard and mouse</small></button>
+        <button class="btn ghost" data-start-mode="phone"><span data-i18n="phoneMode">Phone mode</span><small data-i18n="phoneModeDesc">Touch controls</small></button>
       </div>
       <div class="menu-stats">
-        <div><b id="stat-districts">9</b><span>districts</span></div>
-        <div><b id="stat-vehicles">50+</b><span>vehicles</span></div>
-        <div><b id="stat-npcs">140</b><span>citizens</span></div>
-        <div><b id="stat-systems">18</b><span>live systems</span></div>
+        <div><b id="stat-districts">9</b><span data-i18n="districts">districts</span></div>
+        <div><b id="stat-vehicles">50+</b><span data-i18n="vehicles">vehicles</span></div>
+        <div><b id="stat-npcs">140</b><span data-i18n="citizens">citizens</span></div>
+        <div><b id="stat-systems">18</b><span data-i18n="liveSystems">live systems</span></div>
       </div>
     </div>
     <footer class="menu-foot">
-      <span>WASD move · Mouse look · E interact · Tab phone · M map · Esc pause</span>
-      <span>WebGL · Procedural build</span>
+      <span data-i18n="pcControls">WASD move · Mouse look · E interact · Tab phone · M map · Esc pause</span>
+      <span data-i18n="buildInfo">WebGL · Procedural build</span>
     </footer>
   </div>
 
@@ -103,7 +108,17 @@
 
     <div class="hud-bottom" id="hud-bottom">
       <div class="controls-hint glass" id="controls-hint">
-        <span><kbd>WASD</kbd> Move</span><span><kbd>Shift</kbd> Sprint</span><span><kbd>Space</kbd> Jump</span><span><kbd>E</kbd> Interact</span><span><kbd>Tab</kbd> Phone</span>
+        <span><kbd>WASD</kbd> <i data-i18n="move">Move</i></span><span><kbd>Shift</kbd> <i data-i18n="sprint">Sprint</i></span><span><kbd>Space</kbd> <i data-i18n="jump">Jump</i></span><span><kbd>E</kbd> <i data-i18n="interact">Interact</i></span><span><kbd>Tab</kbd> <i data-i18n="phone">Phone</i></span>
+      </div>
+    </div>
+    <div class="phone-controls" id="phone-controls" aria-label="Touch controls">
+      <div class="touch-stick" id="touch-stick" aria-label="Movement joystick"><div class="touch-stick-thumb" id="touch-stick-thumb"></div></div>
+      <div class="touch-actions">
+        <button data-touch-action="map" aria-label="Map">◇</button>
+        <button data-touch-action="phone" aria-label="Phone">☎</button>
+        <button data-touch-action="sprint" data-i18n="sprint">Sprint</button>
+        <button data-touch-action="jump" data-i18n="jump">Jump</button>
+        <button class="touch-action-main" data-touch-action="interact" data-i18n="interact">Interact</button>
       </div>
     </div>
 

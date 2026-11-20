@@ -74,6 +74,7 @@ class Game {
     this.jumpBuffer = 0;
     this.input = { ...IDLE_INPUT };
     this.controls = { vehicle: {} };
+    this.touch = { x: 0, y: 0, sprint: false, jump: false };
     this.elapsed = 0;
     this.ui = null;
     this.player = null;
@@ -91,7 +92,7 @@ class Game {
   /* ------------------------------------------------------------------ */
 
   loadSettings() {
-    const defaults = { quality: 'medium', shadows: true, volume: 0.7, invert: false, time: 'dawn', fov: 62 };
+    const defaults = { quality: 'medium', shadows: true, volume: 0.7, invert: false, time: 'dawn', fov: 62, mode: 'pc', language: 'en' };
     try {
       const raw = localStorage.getItem(SETTINGS_KEY);
       return raw ? { ...defaults, ...JSON.parse(raw) } : defaults;
@@ -246,6 +247,7 @@ class Game {
 
     this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     this.canvas.addEventListener('mousedown', (e) => {
+      if (this.settings.mode === 'phone') return;
       if (e.button !== 0) return;
       if (this.mode === 'menu' || this.paused || this.ui?.overlay) return;
       this.dragging = true;
@@ -258,6 +260,7 @@ class Game {
     window.addEventListener('mousemove', (e) => {
       if (this.mode === 'menu' || this.paused || this.ui?.overlay || !this.player) return;
       let dx = 0, dy = 0;
+      if (this.settings.mode === 'phone') return;
       if (document.pointerLockElement === this.canvas) {
         dx = e.movementX || 0; dy = e.movementY || 0;
       } else if (this.dragging) {
@@ -296,6 +299,15 @@ class Game {
     this.input.jump = jump;
     this.input.brake = back || jump;
     this.input.crouch = k.has('KeyC');
+    if (this.settings.mode === 'phone') {
+      this.input.forward = this.touch.y < -0.25;
+      this.input.back = this.touch.y > 0.25;
+      this.input.left = this.touch.x < -0.25;
+      this.input.right = this.touch.x > 0.25;
+      this.input.sprint = this.touch.sprint;
+      if (this.touch.jump) this.jumpBuffer = 0.2;
+      this.input.jump = this.touch.jump || this.jumpBuffer > 0;
+    }
     this.controls.vehicle = {
       throttle: fwd ? 1 : 0,
       brake: back ? 1 : 0,
@@ -1114,6 +1126,7 @@ class Game {
   }
 
   requestPointerLock() {
+    if (this.settings.mode === 'phone') return;
     if (!this.canvas.requestPointerLock) return;
     try {
       const result = this.canvas.requestPointerLock();

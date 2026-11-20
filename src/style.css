@@ -224,6 +224,12 @@ kbd { display: inline-flex; align-items: center; justify-content: center; min-wi
 .toast.hidden { display: none; }
 #wanted-chip.dim { opacity: .4; }
 
+body.mode-phone .controls-hint,
+body.mode-phone .menu-foot,
+body.mode-phone .veh-hints { display: none !important; }
+body.mode-phone #phone-controls { display: block; }
+body.mode-pc #phone-controls { display: none; }
+
 @media (max-width: 900px) {
   .menu { padding: 22px; }
   .menu-stats { display: none; }
