@@ -76,7 +76,7 @@ class Game {
     this.jumpBuffer = 0;
     this.input = { ...IDLE_INPUT };
     this.controls = { vehicle: {} };
-    this.touch = { x: 0, y: 0, sprint: false, jump: false };
+    this.touch = { x: 0, y: 0, sprint: false, jump: false, throttle: false, brake: false };
     this.elapsed = 0;
     this.ui = null;
     this.player = null;
@@ -353,6 +353,17 @@ class Game {
       down: sprint ? 1 : 0,
       left, right,
     };
+    if (this.settings.mode === 'phone' && !pad) {
+      const touchSteer = Math.abs(this.touch.x) < 0.12 ? 0 : this.touch.x;
+      this.controls.vehicle.throttle = Math.max(this.touch.throttle ? 1 : 0, clamp(-this.touch.y, 0, 1));
+      this.controls.vehicle.brake = Math.max(this.touch.brake ? 1 : 0, clamp(this.touch.y, 0, 1));
+      this.controls.vehicle.steer = touchSteer;
+      this.controls.vehicle.left = touchSteer < -0.16;
+      this.controls.vehicle.right = touchSteer > 0.16;
+      this.controls.vehicle.handbrake = this.touch.jump;
+      this.controls.vehicle.up = this.touch.jump ? 1 : 0;
+      this.controls.vehicle.down = this.touch.sprint ? 1 : 0;
+    }
     if (pad && this.settings.mode !== 'phone') {
       this.controls.vehicle.throttle = moveY < -0.16 ? -moveY : 0;
       this.controls.vehicle.brake = moveY > 0.16 || padBrake ? Math.max(moveY, padBrake ? 1 : 0) : 0;

@@ -61,7 +61,7 @@ export class Vehicle {
     this.brakeOn = false;
     this.cruise = 0;
     this.lodTick = Math.random() * 4;
-    if (opts.traffic) this.initTraffic();
+    if (opts.traffic) this.initTraffic(opts.trafficRoute);
     if (this.service) this.addServiceLights();
   }
 
@@ -85,15 +85,16 @@ export class Vehicle {
     this.serviceLights = { redM, blueM, light: l, group: g };
   }
 
-  initTraffic() {
-    let node = this.game.city.nearestNode(this.pos.x, this.pos.z);
-    let dir = pick(AXES);
+  initTraffic(route = null) {
+    let node = route?.node || this.game.city.nearestNode(this.pos.x, this.pos.z);
+    let dir = route?.dir || pick(AXES);
     let next = this.getNeighbor(node, dir);
     let guard = 0;
     while (!next && guard++ < 8) { dir = pick(AXES); next = this.getNeighbor(node, dir); }
     if (!next) { this.mode = 'parked'; return; }
     this.traffic = {
-      node, next, dir, t: rand(2, 60), lane: 3.9, cruise: this.type === 'bus' || this.type === 'truck' ? rand(8, 10) : rand(10, 14),
+      node, next, dir, t: route?.t ?? rand(2, 60), lane: route?.lane ?? 3.9,
+      cruise: this.type === 'bus' || this.type === 'truck' ? rand(8, 10) : rand(10, 14),
       turnTimer: 0, stopTimer: 0,
     };
     const p = this.lanePoint(this.traffic);
@@ -140,33 +141,40 @@ export class Vehicle {
       this.knock.multiplyScalar(1 - dt * 4);
     }
     const segLen = 96;
-    // signal ahead
+    // Slow for red lights with enough room to stop before the intersection.
     const axis = tr.dir[0] !== 0 ? 'x' : 'z';
     const distToNode = segLen - tr.t;
     let targetSpeed = tr.cruise;
     let stop = false;
-    if (distToNode < 25) {
+    if (distToNode < 34) {
       const state = this.game.city.signalState(tr.next, axis, elapsed);
-      if (state === 'red' || (state === 'yellow' && distToNode > 8)) {
-        if (distToNode < 19) stop = true;
+      const stoppingDistance = Math.max(0, distToNode - 10);
+      const canStopForYellow = this.speed * this.speed <= 2 * this.cfg.brake * .8 * stoppingDistance;
+      if (state === 'red' || (state === 'yellow' && canStopForYellow)) {
+        const approachSpeed = Math.sqrt(2 * this.cfg.brake * .8 * stoppingDistance);
+        targetSpeed = Math.min(targetSpeed, approachSpeed);
+        if (distToNode <= 10.5) { targetSpeed = 0; stop = true; }
       }
     }
-    // forward obstacle: traffic and player vehicles
-    if (!stop) {
-      const fx = Math.sin(this.heading), fz = Math.cos(this.heading);
-      for (const other of this.game.vehicles.vehicles) {
-        if (other === this) continue;
-        const dx = other.pos.x - this.pos.x, dz = other.pos.z - this.pos.z;
-        const d = Math.hypot(dx, dz);
-        if (d < (other.cfg.len + this.cfg.len) * .5 + 4 && d > 0.01) {
-          const dot = (dx * fx + dz * fz) / d;
-          if (dot > .7) { stop = true; break; }
-        }
+    // Only react to vehicles in this lane and ahead; curbside parking and
+    // opposing traffic should not make a car brake unnecessarily.
+    const forwardX = Math.sin(this.heading), forwardZ = Math.cos(this.heading);
+    for (const other of this.game.vehicles.vehicles) {
+      if (other === this || other.mode === 'parked' && other.isAir) continue;
+      const dx = other.pos.x - this.pos.x, dz = other.pos.z - this.pos.z;
+      const along = dx * forwardX + dz * forwardZ;
+      if (along <= 0) continue;
+      const lateral = Math.abs(dx * forwardZ - dz * forwardX);
+      const laneWidth = (this.cfg.wid + other.cfg.wid) * .5 + 1.1;
+      const gap = along - (this.cfg.len + other.cfg.len) * .5;
+      if (lateral < laneWidth && gap < 6.5) {
+        targetSpeed = Math.min(targetSpeed, Math.max(0, other.speed || 0));
+        if (gap < 1.5 || (other.mode !== 'traffic' && other !== this.game.vehicles.playerVehicle)) stop = true;
       }
-      // pedestrians in front
-      const ped = this.game.npcs?.anyInFront(this.pos.x, this.pos.z, this.heading, 8);
-      if (ped) stop = true;
     }
+    // Yield to pedestrians directly in the driving corridor.
+    const ped = this.game.npcs?.anyInFront(this.pos.x, this.pos.z, this.heading, 8);
+    if (ped) stop = true;
     if (stop) targetSpeed = 0;
     if (this.health < 15) targetSpeed = 0;
     const accel = stop ? this.cfg.brake * .8 : this.cfg.accel * .55;
@@ -177,6 +185,7 @@ export class Vehicle {
     const dx = p.x - this.pos.x, dz = p.z - this.pos.z;
     const desired = Math.atan2(dx, dz);
     let diff = normAngle(desired - this.heading);
+    this.steer = lerp(this.steer, clamp(diff * 1.7, -.65, .65), clamp(dt * 8, 0, 1));
     const turnRate = clamp(this.speed * .35, 0, 2.2);
     this.heading = normAngle(this.heading + clamp(diff, -turnRate * dt, turnRate * dt));
     // move
@@ -513,28 +522,46 @@ export class VehicleManager {
 
   spawnTraffic(count) {
     const types = ['sedan', 'sedan', 'taxi', 'suv', 'sports', 'van', 'pickup', 'bus', 'truck', 'suv', 'sedan'];
-    const parked = this.vehicles.filter(v => v.mode === 'parked' || v.mode === 'traffic');
-    for (let i = 0; i < count; i++) {
-      const t = pick(types);
-      const seg = this.randomRoadPoint();
-      const v = this.spawn(t, seg.x, seg.z, seg.heading, { traffic: true, color: randomVehicleColor(t), y: .02 });
-      v.traffic.cruise = t === 'bus' ? rand(7, 9) : t === 'truck' ? rand(7, 9) : rand(10, 14.5);
-      this.vehicles.push;
+    const existing = this.vehicles.filter(v => v.mode === 'traffic').length;
+    const amount = Math.max(0, Math.min(Math.floor(count), this.trafficLimit - existing));
+    let spawned = 0;
+    for (let i = 0; i < amount; i++) {
+      let type, point;
+      for (let attempt = 0; attempt < 48; attempt++) {
+        type = pick(types);
+        point = this.randomRoadPoint();
+        const cfg = VEHICLE_TYPES[type];
+        const blocked = this.vehicles.some(other => {
+          const minGap = (cfg.len + other.cfg.len) * .5 + 5;
+          return Math.hypot(other.pos.x - point.x, other.pos.z - point.z) < Math.max(13, minGap);
+        });
+        if (!blocked) break;
+        point = null;
+      }
+      if (!point) continue;
+      const v = this.spawn(type, point.x, point.z, point.heading, {
+        traffic: true, trafficRoute: point.route, color: randomVehicleColor(type), y: .02,
+      });
+      v.traffic.cruise = type === 'bus' || type === 'truck' ? rand(7, 9) : rand(10, 14.5);
+      spawned++;
     }
+    return spawned;
   }
 
   randomRoadPoint() {
-    const i = 1 + Math.floor(Math.random() * 7);
-    const j = 1 + Math.floor(Math.random() * 7);
-    const vertical = Math.random() > .5;
-    if (vertical) {
-      const x = NODE_POS(i) + (Math.random() > .5 ? 4 : -4);
-      const z = NODE_POS(j) + rand(10, 80) * (Math.random() > .5 ? 1 : -1);
-      return { x, z, heading: z > NODE_POS(j) ? 0 : Math.PI, axis: 'z' };
-    }
-    const z = NODE_POS(j) + (Math.random() > .5 ? 4 : -4);
-    const x = NODE_POS(i) + rand(10, 80) * (Math.random() > .5 ? 1 : -1);
-    return { x, z, heading: x > NODE_POS(i) ? Math.PI / 2 : -Math.PI / 2, axis: 'x' };
+    const city = this.game.city;
+    const node = city.nodeGrid[Math.floor(Math.random() * 9)][Math.floor(Math.random() * 9)];
+    const options = AXES.filter(dir => node.i + dir[0] >= 0 && node.i + dir[0] < 9 && node.j + dir[1] >= 0 && node.j + dir[1] < 9);
+    const dir = pick(options);
+    const t = rand(12, 84);
+    const lane = 3.9;
+    const rx = -dir[1], rz = dir[0];
+    const x = node.x + dir[0] * t + rx * lane;
+    const z = node.z + dir[1] * t + rz * lane;
+    return {
+      x, z, heading: Math.atan2(dir[0], dir[1]),
+      route: { node, dir, t, lane },
+    };
   }
 
   spawnParkedCity() {

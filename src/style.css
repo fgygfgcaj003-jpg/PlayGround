@@ -242,6 +242,14 @@ body.mode-pc #phone-controls { display: none !important; }
 .touch-actions button:active { background: rgba(51, 135, 174, .9); border-color: var(--accent); transform: scale(.96); }
 .touch-actions button:nth-child(1), .touch-actions button:nth-child(2) { min-height: 48px; font-size: 19px; }
 .touch-actions .touch-action-main { grid-column: 1 / -1; min-height: 64px; color: #06121a; background: linear-gradient(140deg, #9beaff, #4dbbe9); border-color: rgba(192, 244, 255, .8); }
+.touch-actions .vehicle-control { display: none; }
+.touch-actions .on-foot-control { display: block; }
+body.phone-driving .touch-actions .vehicle-control { display: block; }
+body.phone-driving .touch-actions .on-foot-control,
+body.phone-driving .touch-actions button:nth-child(1),
+body.phone-driving .touch-actions button:nth-child(2) { display: none; }
+body.phone-driving .touch-actions { grid-template-columns: repeat(2, minmax(78px, 94px)); }
+body.phone-driving .touch-actions .touch-action-main { grid-column: 1 / -1; min-height: 54px; color: #fff; background: rgba(115, 36, 44, .84); border-color: rgba(255, 164, 164, .55); }
 body.mode-phone .mode-picker .btn { border-color: rgba(91, 224, 255, .35); }
 
 @media (max-width: 900px) {

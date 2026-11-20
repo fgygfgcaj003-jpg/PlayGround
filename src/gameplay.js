@@ -424,9 +424,11 @@ export class TransitSystem {
   exitMonorail() {
     const m = this.game.city.monorail;
     const p = this.game.player;
-    const station = m.currentStation >= 0 ? m.stations[m.currentStation] : null;
-    if (!station && m.dwell <= 0) { this.game.notify('Wait until the train stops at a station', 'warn'); return; }
-    const st = station || m.stations[0];
+    const stationIndex = m.currentStation;
+    const station = stationIndex >= 0 ? m.stations[stationIndex] : null;
+    const stoppedAtStation = station && m.speed < .35 && m.stationAt(m.progress) === stationIndex;
+    if (!stoppedAtStation) { this.game.notify('Wait until the train stops at a station', 'warn'); return; }
+    const st = station;
     const tower = st.tower;
     p.riding = null;
     p.group.visible = true;

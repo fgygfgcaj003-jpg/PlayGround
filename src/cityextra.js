@@ -447,9 +447,10 @@ export function buildTransit(city, rng) {
   root.add(guide);
 
   const loopLen = 4 * (2 * R);
+  const initialProgress = loopLen / 8;
   const monorail = {
-    group: train, progress: 0, speed: 11, targetSpeed: 11, dwell: 0, manual: false,
-    stations, Y, R, perimeter: loopLen, doorOpen: false, currentStation: -1, lastStation: -1,
+    group: train, progress: initialProgress, speed: 0, targetSpeed: 11, dwell: 5.5, manual: false,
+    stations, Y, R, perimeter: loopLen, doorOpen: true, currentStation: 0, lastStation: 0,
     stopAt: null, riding: false,
     update(dt, elapsed) {
       if (this.manual) {
@@ -458,7 +459,11 @@ export function buildTransit(city, rng) {
         this.speed *= (1 - dt * .12);
         this.progress = (this.progress + this.speed * dt) % this.perimeter;
         if (this.speed < 0) this.speed = 0;
+        if (this.speed > .5 || this.stationAt(this.progress) !== this.currentStation) this.currentStation = -1;
+        else if (this.speed < .25) this.currentStation = this.stationAt(this.progress);
+        this.doorOpen = this.currentStation >= 0 && this.speed < .25;
         this.positionCars();
+        this.animateDoors(dt);
         return;
       }
       // automatic: stop at next station
@@ -474,6 +479,7 @@ export function buildTransit(city, rng) {
           this.speed = THREE.MathUtils.damp(this.speed, 11, 1.1, dt);
         }
         this.progress = (this.progress + this.speed * dt) % this.perimeter;
+        if (this.speed > .5) this.currentStation = -1;
       }
       this.positionCars();
       this.animateDoors(dt);
@@ -497,7 +503,7 @@ export function buildTransit(city, rng) {
       return seg * 3.5;
     },
     stationAt(p) {
-      let best = -1, bd = 30;
+      let best = -1, bd = 4;
       for (let i = 0; i < this.stations.length; i++) {
         const sp = this.stationProgress(this.stations[i]);
         let d = Math.abs(((p - sp + this.perimeter / 2) % this.perimeter) - this.perimeter / 2);
@@ -522,6 +528,8 @@ export function buildTransit(city, rng) {
     board() { this.dwell = 5; return true; },
     stationPositions() { return this.stations.map(s => s.tower); },
   };
+  monorail.positionCars();
+  monorail.animateDoors(1);
   city.monorail = monorail;
 
   // --- ground railway (freight/commuter) ---

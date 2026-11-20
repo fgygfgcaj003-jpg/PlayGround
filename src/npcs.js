@@ -279,7 +279,7 @@ export class PedestrianSystem {
     // collision avoid buildings (sidewalk is safe)
   }
 
-  updateCrosser(p, dt) {
+  updateCrosser(p, dt, elapsed) {
     if (p.crossing) {
       const dx = p.endX - p.x, dz = p.endZ - p.z;
       const d = Math.hypot(dx, dz);
@@ -296,7 +296,27 @@ export class PedestrianSystem {
       }
     } else {
       p.wait -= dt;
-      if (p.wait <= 0) p.crossing = true;
+      if (p.wait > 0) return;
+
+      const node = this.game.city.nodeGrid?.[p.originNode]?.[p.originLine];
+      const roadAxis = p.crossVertical ? 'z' : 'x';
+      const signal = node ? this.game.city.signalState(node, roadAxis, elapsed) : 'green';
+      if (signal !== 'green') { p.wait = .45; return; }
+
+      let approach = false;
+      const vehicles = this.game.vehicles?.vehicles || [];
+      for (const v of vehicles) {
+        if (v.disposed || !v.pos) continue;
+        const dvx = v.pos.x - p.x, dvz = v.pos.z - p.z;
+        const dist = Math.hypot(dvx, dvz);
+        if (dist < 16 && Math.abs(v.speed) > 3.5) {
+          const hx = Math.sin(v.heading || 0), hz = Math.cos(v.heading || 0);
+          const closing = (p.x - v.pos.x) * hx + (p.z - v.pos.z) * hz;
+          if (closing > 0) { approach = true; break; }
+        }
+      }
+      if (approach) { p.wait = .35; return; }
+      p.crossing = true;
     }
   }
 

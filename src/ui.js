@@ -195,17 +195,24 @@ export class UI {
         if (action === 'map') this.game.toggleOverlay('map');
         else if (action === 'phone') this.game.toggleOverlay('phone');
         else if (action === 'interact') this.game.interact();
+        else if (action === 'exit') this.game.exitVehicle();
         else if (action === 'jump') this.game.touch.jump = true;
         else if (action === 'sprint') this.game.touch.sprint = true;
+        else if (action === 'throttle') { this.game.touch.brake = false; this.game.touch.throttle = true; }
+        else if (action === 'brake') { this.game.touch.throttle = false; this.game.touch.brake = true; }
       };
       const release = (e) => {
         e.preventDefault();
         if (action === 'jump') this.game.touch.jump = false;
         if (action === 'sprint') this.game.touch.sprint = false;
+        if (action === 'throttle') this.game.touch.throttle = false;
+        if (action === 'brake') this.game.touch.brake = false;
       };
       btn.addEventListener('pointerdown', press);
       btn.addEventListener('pointerup', release);
       btn.addEventListener('pointercancel', release);
+      btn.addEventListener('lostpointercapture', release);
+      btn.addEventListener('pointerleave', (e) => { if (e.buttons) release(e); });
     });
   }
 
@@ -289,6 +296,8 @@ export class UI {
     this.el.temp.textContent = `${Math.round(g.temperature)}°C`;
     this.el.daybar.style.width = `${(hour / 24 * 100).toFixed(0)}%`;
     this.el.district.textContent = g.city.districtAt(g.player.pos.x, g.player.pos.z).toUpperCase();
+    const driving = !!g.vehicles.playerVehicle;
+    document.body.classList.toggle('phone-driving', driving);
     if (g.vehicles.playerVehicle) {
       const v = g.vehicles.playerVehicle;
       this.el.vehicleHud.classList.remove('hidden');

@@ -140,14 +140,14 @@ export class EmergencySystem {
     return [startNode, endNode];
   }
 
-  setDestination(unit, pos) {
+  setDestination(unit, pos, state = 'responding') {
     const start = this.game.city.nearestNode(unit.vehicle.pos.x, unit.vehicle.pos.z);
     const end = this.game.city.nearestNode(pos.x, pos.z);
     unit.path = this.aStar(start, end).slice(1).map(n => new THREE.Vector3(n.x, 0, n.z));
     unit.finalTarget = new THREE.Vector3(pos.x, 0, pos.z);
     unit.target.copy(unit.path[0] || unit.finalTarget);
-    unit.state = 'responding';
-    unit.siren = true;
+    unit.state = state;
+    unit.siren = state === 'responding' || state === 'chase';
     unit.vehicle.lightsOn = true;
   }
 
@@ -249,7 +249,13 @@ export class EmergencySystem {
     const dx = target.x - v.pos.x, dz = target.z - v.pos.z;
     const d = Math.hypot(dx, dz);
     if (d < 5 && !u.path?.length) {
-      if (u.state !== 'onScene') { u.state = 'onScene'; u.onScene = u.type === 'fire' ? 8 : 5; }
+      if (u.state === 'return') {
+        u.state = 'idle';
+        u.siren = false;
+      } else if (u.state === 'responding' || u.state === 'chase') {
+        u.state = 'onScene';
+        u.onScene = u.type === 'fire' ? 8 : 5;
+      }
       u.speed = Math.max(0, u.speed - dt * 10);
     } else {
       const desired = Math.atan2(dx, dz);
@@ -272,20 +278,20 @@ export class EmergencySystem {
     v.animateLights(elapsed, this.game.night, {});
     if (u.type === 'fire' && u.state === 'onScene') {
       const ev = this.game.events.fires.find(f => !f.done);
-      if (ev) {
-        u.onScene -= dt;
-        if (u.onScene <= 0) this.game.events.extinguish(ev);
-        if (Math.random() < .5) {
-          for (let i = 0; i < 3; i++) {
-            this.game.effects.sparksAt(ev.pos.x + rand(-2, 2), ev.pos.y + rand(.5, 3), ev.pos.z + rand(-2, 2), 1, 0xaedcff);
-          }
+      u.onScene -= dt;
+      if (ev && u.onScene <= 0) this.game.events.extinguish(ev);
+      if (ev && Math.random() < .5) {
+        for (let i = 0; i < 3; i++) {
+          this.game.effects.sparksAt(ev.pos.x + rand(-2, 2), ev.pos.y + rand(.5, 3), ev.pos.z + rand(-2, 2), 1, 0xaedcff);
         }
       }
+      if (u.onScene <= 0) this.setDestination(u, u.home, 'return');
     }
     if (u.type === 'ambulance' && u.state === 'onScene') {
       u.onScene -= dt;
       if (u.onScene <= 0) {
         this.game.events.resolveAccident();
+        this.setDestination(u, u.home, 'return');
       }
     }
     // police arrest
@@ -306,7 +312,8 @@ export class EmergencySystem {
           u.siren = false;
         }
         this.updateUnitDriving(u, dt, elapsed);
-        if (!u.path?.length && u.state !== 'onScene') { u.state = 'patrol'; u.path = []; }
+        if (u.state === 'patrol' && u.path && u.path.length === 0) u.path = [];
+        if (u.state !== 'patrol') continue;
         continue;
       }
       if (u.state === 'idle') {
@@ -318,7 +325,7 @@ export class EmergencySystem {
         this.updateUnitDriving(u, dt, elapsed);
         if (u.type === 'police') {
           u.onScene -= dt;
-          if (u.onScene <= 0 && this.game.wanted.level === 0) { u.state = 'return'; this.setDestination(u, u.home); }
+          if (u.onScene <= 0 && this.game.wanted.level === 0) { this.setDestination(u, u.home, 'return'); }
         }
         continue;
       }

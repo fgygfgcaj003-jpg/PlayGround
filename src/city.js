@@ -812,13 +812,11 @@ export class City {
     if (axis === 'x') {
       if (t < 9) return 'green';
       if (t < 11) return 'yellow';
-      if (t < 24) return 'red';
-      return 'yellow';
+      return 'red';
     }
-    if (t < 11) return 'red';
-    if (t < 15) return 'green';
-    if (t < 24) return 'red';
-    if (t < 26) return 'green';
+    if (t < 12) return 'red';
+    if (t < 22) return 'green';
+    if (t < 24) return 'yellow';
     return 'red';
   }
 
