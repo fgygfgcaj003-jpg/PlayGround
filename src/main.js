@@ -71,6 +71,8 @@ class Game {
     this.lastVehicle = null;
     this.interaction = null;
     this.keys = new Set();
+    this.gamepadButtons = new Set();
+    this.gamepadId = null;
     this.jumpBuffer = 0;
     this.input = { ...IDLE_INPUT };
     this.controls = { vehicle: {} };
@@ -282,14 +284,48 @@ class Game {
     });
   }
 
-  readInput() {
+  readInput(dt = 0) {
     const k = this.keys;
-    const fwd = k.has('KeyW') || k.has('ArrowUp');
-    const back = k.has('KeyS') || k.has('ArrowDown');
-    const left = k.has('KeyA') || k.has('ArrowLeft');
-    const right = k.has('KeyD') || k.has('ArrowRight');
-    const sprint = k.has('ShiftLeft') || k.has('ShiftRight');
-    const jump = k.has('Space') || this.jumpBuffer > 0;
+    const gamepads = navigator.getGamepads?.() || [];
+    const pad = Array.from(gamepads).find((candidate) => candidate?.connected) || null;
+    const buttons = new Set();
+    let moveX = 0, moveY = 0, lookX = 0, lookY = 0;
+    let padSprint = false, padJump = false, padBrake = false;
+
+    if (pad) {
+      this.gamepadId = pad.index;
+      const axis = (value) => Math.abs(value || 0) < 0.16 ? 0 : value;
+      moveX = axis(pad.axes[0]);
+      moveY = axis(pad.axes[1]);
+      lookX = axis(pad.axes[2]);
+      lookY = axis(pad.axes[3]);
+      const pressed = (index) => !!pad.buttons[index]?.pressed || (pad.buttons[index]?.value || 0) > 0.6;
+      for (let i = 0; i < pad.buttons.length; i++) if (pressed(i)) buttons.add(i);
+      padJump = buttons.has(0);
+      padBrake = buttons.has(1);
+      padSprint = buttons.has(5) || (pad.buttons[7]?.value || 0) > 0.25;
+      const justPressed = (index) => buttons.has(index) && !this.gamepadButtons.has(index);
+      if (this.mode !== 'menu' && this.ready) {
+        if (justPressed(2)) this.interact();
+        if (justPressed(3)) this.toggleOverlay('map');
+        if (justPressed(4)) this.toggleOverlay('phone');
+        if (justPressed(9)) this.togglePause();
+      }
+      if (lookX || lookY) {
+        this.player.cameraYaw += lookX * dt * 2.4;
+        this.player.cameraPitch = clamp(this.player.cameraPitch + (this.settings.invert ? -1 : 1) * lookY * dt * 1.8, -0.55, 1.0);
+      }
+    } else {
+      this.gamepadId = null;
+    }
+    this.gamepadButtons = buttons;
+
+    const fwd = k.has('KeyW') || k.has('ArrowUp') || moveY < -0.25;
+    const back = k.has('KeyS') || k.has('ArrowDown') || moveY > 0.25;
+    const left = k.has('KeyA') || k.has('ArrowLeft') || moveX < -0.25;
+    const right = k.has('KeyD') || k.has('ArrowRight') || moveX > 0.25;
+    const sprint = k.has('ShiftLeft') || k.has('ShiftRight') || padSprint;
+    const jump = k.has('Space') || this.jumpBuffer > 0 || padJump;
     this.jumpBuffer = 0;
     this.input.forward = fwd;
     this.input.back = back;
@@ -297,8 +333,8 @@ class Game {
     this.input.right = right;
     this.input.sprint = sprint;
     this.input.jump = jump;
-    this.input.brake = back || jump;
-    this.input.crouch = k.has('KeyC');
+    this.input.brake = back || padBrake;
+    this.input.crouch = k.has('KeyC') || buttons.has(1);
     if (this.settings.mode === 'phone') {
       this.input.forward = this.touch.y < -0.25;
       this.input.back = this.touch.y > 0.25;
@@ -310,13 +346,22 @@ class Game {
     }
     this.controls.vehicle = {
       throttle: fwd ? 1 : 0,
-      brake: back ? 1 : 0,
+      brake: back || padBrake ? 1 : 0,
       steer: (right ? 1 : 0) - (left ? 1 : 0),
       handbrake: jump,
       up: jump ? 1 : 0,
       down: sprint ? 1 : 0,
       left, right,
     };
+    if (pad && this.settings.mode !== 'phone') {
+      this.controls.vehicle.throttle = moveY < -0.16 ? -moveY : 0;
+      this.controls.vehicle.brake = moveY > 0.16 || padBrake ? Math.max(moveY, padBrake ? 1 : 0) : 0;
+      this.controls.vehicle.steer = moveX;
+      this.controls.vehicle.left = moveX < -0.16;
+      this.controls.vehicle.right = moveX > 0.16;
+      this.controls.vehicle.up = Math.max(this.controls.vehicle.up, padJump ? 1 : 0);
+      this.controls.vehicle.down = Math.max(this.controls.vehicle.down, padSprint ? 1 : 0);
+    }
   }
 
   toggleOverlay(name) {
@@ -374,7 +419,7 @@ class Game {
     if (this.bustedCooldown > 0) this.bustedCooldown -= dt;
     if (this.crimeCooldown > 0) this.crimeCooldown -= dt;
 
-    this.readInput();
+    this.readInput(dt);
     this.updateTime(dt);
     this.updateWeather(dt);
     this.city.updateLighting(this.hour, this.weather, dt);
@@ -1107,6 +1152,11 @@ class Game {
     this.mode = 'menu';
     this.started = false;
     this.keys.clear();
+    this.touch.x = 0;
+    this.touch.y = 0;
+    this.touch.sprint = false;
+    this.touch.jump = false;
+    this.gamepadButtons.clear();
     this.player.endCinematic();
     this.player.beginCinematic(170, 96, 210, 250, 0.055);
     this.ui.showMenu();

@@ -101,6 +101,7 @@ export class UI {
     $('btn-resume').addEventListener('click', () => this.closeOverlay());
     $('btn-pause-save').addEventListener('click', () => { g.saveGame(); this.toast('Game saved to this browser'); });
     $('btn-pause-settings').addEventListener('click', () => this.openSettings());
+    $('btn-pause-restart').addEventListener('click', () => g.startNewGame());
     $('btn-pause-menu').addEventListener('click', () => g.returnToMenu());
     document.querySelectorAll('[data-overlay]').forEach(btn => {
       btn.addEventListener('click', () => this.openOverlay(btn.dataset.overlay));
@@ -126,12 +127,14 @@ export class UI {
       languageSelect.value = g.settings.language || 'en';
       languageSelect.addEventListener('change', () => {
         g.settings.language = languageSelect.value;
-        g.saveSettings();
         this.applyLanguage();
+        g.saveSettings();
+        if (this.overlay === 'settings') this.buildSettings($('modal-settings') || $('settings-list'));
       });
     }
     this.bindTouchControls();
     this.applyLanguage();
+    this.applyPlayMode();
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         if (this.overlay) { e.preventDefault(); this.closeOverlay(); }
@@ -176,12 +179,14 @@ export class UI {
     };
     const resetStick = () => {
       this.game.touch.x = 0; this.game.touch.y = 0;
+      this.game.touch.sprint = false;
       if (thumb) thumb.style.transform = '';
     };
     stick.addEventListener('pointerdown', (e) => { stick.setPointerCapture?.(e.pointerId); updateStick(e); });
     stick.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') updateStick(e); });
     stick.addEventListener('pointerup', resetStick);
     stick.addEventListener('pointercancel', resetStick);
+    stick.addEventListener('lostpointercapture', resetStick);
 
     document.querySelectorAll('[data-touch-action]').forEach(btn => {
       const action = btn.dataset.touchAction;
@@ -523,6 +528,11 @@ export class UI {
     this.mapOpen = false;
     this.el.overlayRoot.classList.add('hidden');
     this.game.paused = false;
+    this.game.touch.x = 0;
+    this.game.touch.y = 0;
+    this.game.touch.sprint = false;
+    this.game.touch.jump = false;
+    this.game.keys.clear();
     this.game.audio?.click();
   }
 
@@ -682,7 +692,16 @@ export class UI {
         if (k === 'invert') this.game.settings.invert = el.value === 'yes';
         if (k === 'time') this.game.setTimeOfDay(el.value);
         if (k === 'fov') { this.game.settings.fov = parseInt(el.value); this.game.camera.fov = parseInt(el.value); this.game.camera.updateProjectionMatrix(); }
+        if (k === 'language') {
+          this.game.settings.language = el.value;
+          this.applyLanguage();
+        }
+        if (k === 'mode') {
+          this.game.settings.mode = el.value === 'phone' ? 'phone' : 'pc';
+          this.applyPlayMode();
+        }
         this.game.saveSettings();
+        if (k === 'language') this.buildSettings(container);
         this.game.audio?.click();
       });
       if (el.type === 'range') el.addEventListener('input', () => {
