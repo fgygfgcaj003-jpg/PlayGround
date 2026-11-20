@@ -215,6 +215,7 @@ export class UI {
   }
 
   showMenu() {
+    document.body.classList.remove('game-playing', 'ui-overlay-open');
     this.el.menu.classList.remove('hidden');
     requestAnimationFrame(() => this.el.menu.classList.add('on'));
     this.el.hud.classList.add('hidden');
@@ -228,6 +229,7 @@ export class UI {
 
   hideMenu() {
     this.applyPlayMode();
+    document.body.classList.add('game-playing');
     this.el.menu.classList.remove('on');
     setTimeout(() => this.el.menu.classList.add('hidden'), 700);
     this.el.hud.classList.remove('hidden');
@@ -511,6 +513,7 @@ export class UI {
   openOverlay(name) {
     if (!name) return;
     this.overlay = name;
+    document.body.classList.add('ui-overlay-open');
     this.el.overlayRoot.classList.remove('hidden');
     this.el.overlayRoot.querySelectorAll('.overlay-panel').forEach(p => p.classList.add('hidden'));
     const panel = this.el.overlayRoot.querySelector(`[data-panel="${name}"]`);
@@ -526,6 +529,7 @@ export class UI {
   closeOverlay() {
     this.overlay = null;
     this.mapOpen = false;
+    document.body.classList.remove('ui-overlay-open');
     this.el.overlayRoot.classList.add('hidden');
     this.game.paused = false;
     this.game.touch.x = 0;

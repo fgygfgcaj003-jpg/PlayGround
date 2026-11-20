@@ -362,13 +362,14 @@ export function buildWaterfront(city, rng) {
 export function buildTransit(city, rng) {
   const root = city.root;
   // --- monorail guideway loop ---
-  const R = 250, Y = 14;
+  const R = 250, Y = 14, turnRadius = 18;
   const guideMat = new THREE.MeshStandardMaterial({ color: 0x8f9aa3, roughness: .4, metalness: .55 });
   const guideMat2 = new THREE.MeshStandardMaterial({ color: 0x4a5560, roughness: .5, metalness: .5 });
   const guide = new THREE.Group();
+  const straight = 2 * (R - turnRadius);
   const segs = [
-    [0, -R, 2 * R, 3.2, 0], [0, R, 2 * R, 3.2, 0],
-    [-R, 0, 3.2, 2 * R, 0], [R, 0, 3.2, 2 * R, 0],
+    [0, -R, straight, 3.2, 0], [0, R, straight, 3.2, 0],
+    [-R, 0, 3.2, straight, 0], [R, 0, 3.2, straight, 0],
   ];
   for (const [x, z, w, d] of segs) {
     const beam = new THREE.Mesh(new THREE.BoxGeometry(w, .9, d), guideMat);
@@ -376,12 +377,15 @@ export function buildTransit(city, rng) {
     const rail = new THREE.Mesh(new THREE.BoxGeometry(w + .2, .16, d + .2), guideMat2);
     rail.position.set(x, Y + .52, z); guide.add(rail);
   }
-  // corner curves approximated
-  for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
-    const curve = new THREE.Mesh(new THREE.TorusGeometry(10, 1.5, 6, 18, Math.PI / 2), guideMat);
-    curve.rotation.x = Math.PI / 2; curve.position.set(sx * (R - 10), Y, sz * (R - 10));
-    curve.rotation.z = Math.atan2(sz, sx) - Math.PI / 4;
-    guide.add(curve);
+  const corners = [
+    [R - turnRadius, -R + turnRadius, -Math.PI / 2],
+    [R - turnRadius, R - turnRadius, 0],
+    [-R + turnRadius, R - turnRadius, Math.PI / 2],
+    [-R + turnRadius, -R + turnRadius, Math.PI],
+  ];
+  for (const [x, z, start] of corners) {
+    addCurvedBeam(guide, x, z, turnRadius, start, start + Math.PI / 2, Y, .9, 3.2, guideMat);
+    addCurvedBeam(guide, x, z, turnRadius, start, start + Math.PI / 2, Y + .52, .16, 3.4, guideMat2);
   }
   // pillars
   const pillarGeo = new THREE.CylinderGeometry(.75, .95, Y, 8);
@@ -602,6 +606,23 @@ export function buildTransit(city, rng) {
   // Buses at terminal
   const busDepot = new THREE.Mesh(new THREE.PlaneGeometry(60, 30), new THREE.MeshStandardMaterial({ color: 0x2e3236, roughness: 1 }));
   busDepot.rotation.x = -Math.PI / 2; busDepot.position.set(96, .17, 336); root.add(busDepot);
+}
+
+function addCurvedBeam(root, cx, cz, radius, startAngle, endAngle, y, height, width, material) {
+  const steps = 12;
+  for (let i = 0; i < steps; i++) {
+    const a0 = startAngle + (endAngle - startAngle) * i / steps;
+    const a1 = startAngle + (endAngle - startAngle) * (i + 1) / steps;
+    const am = (a0 + a1) * .5;
+    const dx = Math.cos(am) * radius;
+    const dz = Math.sin(am) * radius;
+    const span = radius * Math.abs(a1 - a0);
+    const segment = new THREE.Mesh(new THREE.BoxGeometry(width, height, span + .12), material);
+    segment.position.set(cx + dx, y, cz + dz);
+    segment.rotation.y = -am;
+    segment.castShadow = true;
+    root.add(segment);
+  }
 }
 
 function loopPoints(progress, perimeter, R) {
