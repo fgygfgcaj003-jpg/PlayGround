@@ -297,7 +297,7 @@ export class Vehicle {
     // collisions
     this.resolveWorldCollisions(dt, vf);
     this.animateWheels(dt);
-    this.animateLights(elapsed, night, controls);
+    this.animateLights(elapsed, night, controls, weather);
     if (this.health < 55) this.game.effects.smokeAtVehicle(this, dt);
     if (hasFuel === false && engine) { this.engineOn = false; }
   }
@@ -349,7 +349,7 @@ export class Vehicle {
       if (controls.up) { this.altitude = 2.4; }
     }
     if (this.health < 55) this.game.effects.smokeAtVehicle(this, dt);
-    this.animateLights(performance.now() / 1000, night, controls);
+    this.animateLights(performance.now() / 1000, night, controls, null);
     if (!engine && this.altitude > 1) { this.altitude = Math.max(.5, this.altitude - dt * 4); }
   }
 
@@ -383,7 +383,7 @@ export class Vehicle {
     this.speed = vf;
     this.speedKmh = Math.abs(vf) * 3.6;
     this.fuel = Math.max(0, this.fuel - dt * (.02 + this.throttle * .04));
-    this.animateLights(performance.now() / 1000, night, controls);
+    this.animateLights(performance.now() / 1000, night, controls, weather);
     if (Math.abs(vf) > 3) {
       this.wakeAcc += dt;
       if (this.wakeAcc > .08) {
@@ -439,9 +439,10 @@ export class Vehicle {
     }
   }
 
-  animateLights(elapsed, night, controls) {
-    const lightsOn = this.lightsOn || night > .5;
-    if (lightsOn) this.lightsOn = true;
+  animateLights(elapsed, night, controls, weather) {
+    // Headlights follow environment state rather than latching permanently after nightfall.
+    const lightsOn = night > .5 || (weather && weather !== 'clear');
+    this.lightsOn = lightsOn;
     const left = this.indicator === -1 || controls?.left;
     const right = this.indicator === 1 || controls?.right;
     setLightState(this.headMats, this.brakeMats, this.turnMats, {

@@ -149,6 +149,47 @@ function addLight(parent, color, x, y, z, w, h, d, opts = {}) {
   return m;
 }
 
+function addHeadlightRig(parent, x, y, z, w = .34, h = .13, opts = {}) {
+  const lens = addLight(parent, 0x4b4d46, x, y, z, w, h, .06, { kind: 'head' });
+  const bezel = new THREE.Mesh(
+    new THREE.BoxGeometry(w * 1.14, h * 1.12, .025),
+    new THREE.MeshStandardMaterial({ color: 0x171b1e, roughness: .28, metalness: .72 })
+  );
+  bezel.position.set(x, y, z - .045);
+  parent.add(bezel);
+
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0xfff2c4,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    blending: THREE.AdditiveBlending,
+    toneMapped: false,
+  });
+  const beamLength = opts.beamLength || 8;
+  const beamWidth = opts.beamWidth || w * 1.7;
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(beamWidth * .38, beamWidth, beamLength, 12, 1, true),
+    beamMat
+  );
+  beam.geometry.rotateX(-Math.PI / 2);
+  beam.position.set(x, y - h * .08, z + beamLength * .5);
+  beam.visible = false;
+  parent.add(beam);
+
+  const light = new THREE.SpotLight(0xfff3c7, 0, beamLength * 1.8, Math.PI * .22, .55, 1.4);
+  light.position.set(x, y, z + .06);
+  light.target.position.set(x, y - .18, z + beamLength);
+  light.visible = false;
+  parent.add(light);
+  parent.add(light.target);
+
+  lens.userData.beam = beam;
+  lens.userData.spot = light;
+  return lens;
+}
+
 function addWheelArch(group, cfg, mats) {
   const x = cfg.wid / 2 - 0.01;
   const wb = cfg.wheelbase || cfg.len * .55;
@@ -203,8 +244,8 @@ function buildCarLike(type, color) {
   addMesh(group, box(wid * .5, .16, .05), trimMat, 0, y0 - .02, len / 2 + .02);
   // headlights
   const hlY = y0 + bodyH * .18;
-  const headL = addLight(group, 0xf2f6e9, -wid * .32, hlY, len / 2 + .02, .34, .13, .06, { kind: 'head' });
-  const headR = addLight(group, 0xf2f6e9, wid * .32, hlY, len / 2 + .02, .34, .13, .06, { kind: 'head' });
+  const headL = addHeadlightRig(group, -wid * .32, hlY, len / 2 + .02, .34, .13, { beamLength: 8, beamWidth: 1.1 });
+  const headR = addHeadlightRig(group, wid * .32, hlY, len / 2 + .02, .34, .13, { beamLength: 8, beamWidth: 1.1 });
   const brakeL = addLight(group, 0x5a0b0b, -wid * .33, hlY, -len / 2 - .02, .36, .12, .05, { kind: 'brake' });
   const brakeR = addLight(group, 0x5a0b0b, wid * .33, hlY, -len / 2 - .02, .36, .12, .05, { kind: 'brake' });
   const turnL = addLight(group, 0x4a2c05, -wid * .45, hlY, len / 2 + .02, .1, .1, .05, { kind: 'turn' });
@@ -272,8 +313,8 @@ function buildBus(color, type = 'bus') {
   // destination board
   addLight(group, 0xffb347, 0, y0 + bodyH * .38, len / 2 + .035, 2.4, .34, .04, { kind: 'sign' });
   // lights
-  const headL = addLight(group, 0xf2f6e9, -wid * .34, cfg.wheelR + .55, len / 2 + .03, .38, .2, .06);
-  const headR = addLight(group, 0xf2f6e9, wid * .34, cfg.wheelR + .55, len / 2 + .03, .38, .2, .06);
+  const headL = addHeadlightRig(group, -wid * .34, cfg.wheelR + .55, len / 2 + .03, .38, .2, { beamLength: 9, beamWidth: 1.25 });
+  const headR = addHeadlightRig(group, wid * .34, cfg.wheelR + .55, len / 2 + .03, .38, .2, { beamLength: 9, beamWidth: 1.25 });
   const brakeL = addLight(group, 0x5a0b0b, -wid * .34, cfg.wheelR + .6, -len / 2 - .03, .3, .4, .05, { kind: 'brake' });
   const brakeR = addLight(group, 0x5a0b0b, wid * .34, cfg.wheelR + .6, -len / 2 - .03, .3, .4, .05, { kind: 'brake' });
   const wheels = makeWheels(group, cfg, 2, 4);
@@ -327,8 +368,8 @@ function buildTruck(type, color, opts = {}) {
   }
   // wheels: front 2, rear 4
   const wheels = makeWheels(group, cfg, 2, 4);
-  const headL = addLight(group, 0xf2f6e9, -wid * .33, wheelR + .6, len / 2 + .03, .4, .2, .06);
-  const headR = addLight(group, 0xf2f6e9, wid * .33, wheelR + .6, len / 2 + .03, .4, .2, .06);
+  const headL = addHeadlightRig(group, -wid * .33, wheelR + .6, len / 2 + .03, .4, .2, { beamLength: 9, beamWidth: 1.35 });
+  const headR = addHeadlightRig(group, wid * .33, wheelR + .6, len / 2 + .03, .4, .2, { beamLength: 9, beamWidth: 1.35 });
   const brakeL = addLight(group, 0x5a0b0b, -wid * .38, wheelR + .6, -len / 2 - .02, .25, .3, .05, { kind: 'brake' });
   const brakeR = addLight(group, 0x5a0b0b, wid * .38, wheelR + .6, -len / 2 - .02, .25, .3, .05, { kind: 'brake' });
   if (type === 'fire' || type === 'ambulance') {
@@ -352,8 +393,8 @@ function buildMotorcycle(color) {
   const rim2 = new THREE.Mesh(rimGeo(.32, .14), rimMat); wheel2.add(rim2);
   // fork
   for (const s of [-1, 1]) addMesh(group, box(.05, .75, .05), silverMat, s * .08, .65, .72, .25, 0, 0);
-  addLight(group, 0xf2f6e9, 0, .95, .6, .22, .16, .06);
-  addLight(group, 0x5a0b0b, 0, .86, -.55, .16, .1, .05, { kind: 'brake' });
+  const head = addHeadlightRig(group, 0, .95, .6, .22, .16, { beamLength: 7, beamWidth: .75 });
+  const brake = addLight(group, 0x5a0b0b, 0, .86, -.55, .16, .1, .05, { kind: 'brake' });
   const wheels = [{ mesh: wheel1, front: true, side: 1 }, { mesh: wheel2, front: false, side: 1 }];
   // rider
   const rider = new THREE.Group();
@@ -363,7 +404,7 @@ function buildMotorcycle(color) {
   addMesh(rider, box(.1, .44, .1), new THREE.MeshStandardMaterial({ color: 0x2e3942, roughness: .8 }), .25, 1.3, .18, -.5, 0, 0);
   rider.visible = false;
   group.add(rider);
-  return { group, wheels, bodyMat, headMats: [], brakeMats: [], rider, cfg, type: 'motorcycle' };
+  return { group, wheels, bodyMat, headMats: [head.material], brakeMats: [brake.material], rider, cfg, type: 'motorcycle' };
 }
 
 function buildBoat(color) {
@@ -444,6 +485,13 @@ function optimizeModelMeshes(v) {
   mark(v.rider);
   mark(v.rotor);
   mark(v.tailRotor);
+  const dynamicObjects = new Set();
+  for (const m of v.headMats || []) {
+    if (m?.userData?.beam) dynamicObjects.add(m.userData.beam);
+    if (m?.userData?.spot) dynamicObjects.add(m.userData.spot);
+  }
+  for (const o of dynamicObjects) mark(o);
+  mark(v.headLightTarget);
   const dynamicMats = new Set([...(v.headMats || []), ...(v.brakeMats || []), ...(v.turnMats || [])]);
   if (dynamicMats.size) {
     group.traverse((o) => { if (o.isMesh && dynamicMats.has(o.material)) keep.add(o); });
@@ -512,7 +560,19 @@ export function randomVehicleColor(type) {
 
 export function setLightState(headMats, brakeMats, turnMats, opts) {
   const { lightsOn = false, braking = false, left = false, right = false, hazard = false } = opts;
-  for (const m of headMats) m.color.setHex(lightsOn ? 0xfff6d8 : 0x4b4d46);
+  for (const m of headMats) {
+    m.color.setHex(lightsOn ? 0xfff6d8 : 0x4b4d46);
+    const beam = m.userData?.beam;
+    const spot = m.userData?.spot;
+    if (beam) {
+      beam.visible = lightsOn;
+      beam.material.opacity = lightsOn ? 0.075 : 0;
+    }
+    if (spot) {
+      spot.visible = lightsOn;
+      spot.intensity = lightsOn ? 22 : 0;
+    }
+  }
   for (const m of brakeMats) m.color.setHex(braking ? 0xff2b2b : lightsOn ? 0x7a1010 : 0x3a0808);
   if (turnMats.length >= 2) {
     const l = left || hazard;
