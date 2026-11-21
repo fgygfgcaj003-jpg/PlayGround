@@ -4,7 +4,7 @@ import {
   clamp, lerp, rand, pick, chance, TAU, makeRng, SpatialHash, formatClock
 } from './utils.js';
 import { facadeTextures, roadMaterialSet, signTexture, billboardTexture, glowTexture } from './textures.js';
-import { buildSky, buildWaterfront, buildProps, buildTransit, buildAirport, buildOutskirts } from './cityextra.js';
+import { buildSky, buildWaterfront, buildProps, buildTransit, buildAirport, buildOutskirts, buildIslands } from './cityextra.js';
 
 export const GRID = 9;
 export const SPACING = 96;
@@ -57,6 +57,12 @@ export class City {
     this.water = null;
     this.monorail = null;
     this.rail = null;
+    this.islandRail = null;
+    this.freightRail = null;
+    this.airTraffic = [];
+    this.islands = [];
+    this.bridges = [];
+    this.islandRoads = [];
     this.highwayCars = [];
     this.factorySmoke = null;
     this.init();
@@ -72,6 +78,7 @@ export class City {
     this.buildBlocks(rng);
     buildProps(this, rng);
     buildWaterfront(this, rng);
+    buildIslands(this, rng);
     buildTransit(this, rng);
     buildAirport(this, rng);
     buildOutskirts(this, rng);
@@ -99,7 +106,11 @@ export class City {
     markDynamic(this.fireflyPoints);
     if (this.monorail) markDynamic(this.monorail.group);
     if (this.rail) markDynamic(this.rail.group);
+    if (this.islandRail) markDynamic(this.islandRail.group);
+    if (this.freightRail) markDynamic(this.freightRail.group);
     if (this.flyingPlane) markDynamic(this.flyingPlane.group);
+    for (const a of this.airTraffic) markDynamic(a.group);
+    if (this.lighthouse) markDynamic(this.lighthouse.group);
     for (const c of this.highwayCars) markDynamic(c);
     for (const a of this.animated) if (a.mesh) markDynamic(a.mesh);
 
@@ -935,6 +946,14 @@ export class City {
     }
     if (this.monorail) this.monorail.update(dt, elapsed);
     if (this.rail) this.rail.update(dt, elapsed);
+    if (this.islandRail) this.islandRail.update(dt, elapsed);
+    if (this.freightRail) this.freightRail.update(dt, elapsed);
+    for (const a of this.airTraffic) a.update(dt, elapsed);
+    if (this.lighthouse) {
+      const sweep = Math.sin(elapsed * .8) * .5 + .5;
+      this.lighthouse.light.intensity = this.night > .4 ? 2.2 + sweep * 2.2 : .4;
+      this.lighthouse.lamp.material.color.setHex(this.night > .4 ? 0xfff2ba : 0x8a8468);
+    }
     if (this.highwayCars.length) {
       for (const c of this.highwayCars) {
         c.position.z += c.userData.speed * dt;
@@ -967,6 +986,10 @@ export class City {
   }
 
   districtAt(x, z) {
+    for (const d of this.islands || []) {
+      const dx = (x - d.x) / d.rx, dz = (z - d.z) / d.rz;
+      if (dx * dx + dz * dz < 1) return d.name;
+    }
     const bi = Math.floor((x + CITY_EXTENT) / SPACING);
     const bj = Math.floor((z + CITY_EXTENT) / SPACING);
     const b = this.blocks.find(b => b.bi === bi && b.bj === bj);
@@ -975,6 +998,22 @@ export class City {
     if (x > 420) return 'NOVA AIRFIELD';
     if (z < -400 || x < -400) return 'OUTSKIRTS';
     return 'NOVA CITY';
+  }
+
+  isLand(x, z) {
+    if (z < 486) return true;
+    for (const d of this.islands || []) {
+      const dx = (x - d.x) / d.rx, dz = (z - d.z) / d.rz;
+      if (dx * dx + dz * dz < 1.03) return true;
+    }
+    for (const b of this.bridges || []) {
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return true;
+    }
+    return false;
+  }
+
+  isWater(x, z) {
+    return !this.isLand(x, z);
   }
 
   districtName(d) {
@@ -1023,6 +1062,12 @@ export class City {
     for (let i = 0; i < GRID; i++) {
       if (Math.abs(x - NODE_POS(i)) < HALF_ROAD) return true;
       if (Math.abs(z - NODE_POS(i)) < HALF_ROAD) return true;
+    }
+    for (const r of this.islandRoads || []) {
+      if (Math.abs(x - r.x) <= r.w / 2 && Math.abs(z - r.z) <= r.d / 2) return true;
+    }
+    for (const b of this.bridges || []) {
+      if (x >= b.minX && x <= b.maxX && z >= b.minZ && z <= b.maxZ) return true;
     }
     return false;
   }

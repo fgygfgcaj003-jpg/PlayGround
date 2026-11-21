@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { clamp, rand, pick } from './utils.js';
 
 const glassMat = new THREE.MeshStandardMaterial({ color: 0x0a141d, roughness: 0.08, metalness: 0.75 });
@@ -434,6 +435,55 @@ function buildHelicopter(color) {
   return { group, wheels: [], bodyMat, headMats: [], brakeMats: [], rotor, tailRotor, cfg, type: 'helicopter' };
 }
 
+function optimizeModelMeshes(v) {
+  const group = v.group;
+  group.updateMatrixWorld(true);
+  const keep = new Set();
+  const mark = (obj) => { if (obj?.traverse) obj.traverse(o => keep.add(o)); };
+  for (const w of v.wheels || []) mark(w.mesh);
+  mark(v.rider);
+  mark(v.rotor);
+  mark(v.tailRotor);
+  const dynamicMats = new Set([...(v.headMats || []), ...(v.brakeMats || []), ...(v.turnMats || [])]);
+  if (dynamicMats.size) {
+    group.traverse((o) => { if (o.isMesh && dynamicMats.has(o.material)) keep.add(o); });
+  }
+  const inv = new THREE.Matrix4().copy(group.matrixWorld).invert();
+  const buckets = new Map();
+  group.traverse((o) => {
+    if (!o.isMesh || keep.has(o) || Array.isArray(o.material)) return;
+    const geo = o.geometry;
+    if (!geo?.attributes?.position || !geo.attributes.normal) return;
+    const key = o.material.uuid;
+    let b = buckets.get(key);
+    if (!b) { b = { material: o.material, geos: [], meshes: [], panel: false, shadow: false }; buckets.set(key, b); }
+    const g = geo.index ? geo.toNonIndexed() : geo.clone();
+    for (const name of Object.keys(g.attributes)) {
+      if (name !== 'position' && name !== 'normal' && name !== 'uv') g.deleteAttribute(name);
+    }
+    g.clearGroups();
+    g.applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld));
+    b.geos.push(g);
+    b.meshes.push(o);
+    b.panel = b.panel || !!o.userData.panel;
+    b.shadow = b.shadow || o.castShadow;
+  });
+  for (const b of buckets.values()) {
+    if (b.meshes.length < 2) {
+      for (const g of b.geos) g.dispose();
+      continue;
+    }
+    const merged = mergeGeometries(b.geos, false);
+    if (!merged) { for (const g of b.geos) g.dispose(); continue; }
+    const mesh = new THREE.Mesh(merged, b.material);
+    mesh.castShadow = b.shadow;
+    mesh.userData.panel = b.panel;
+    group.add(mesh);
+    for (const o of b.meshes) o.parent?.remove(o);
+    for (const g of b.geos) g.dispose();
+  }
+}
+
 export function buildVehicleModel(type, color, opts = {}) {
   let v;
   if (['bus'].includes(type)) v = buildBus(color);
@@ -442,6 +492,7 @@ export function buildVehicleModel(type, color, opts = {}) {
   else if (type === 'boat') v = buildBoat(color);
   else if (type === 'helicopter') v = buildHelicopter(color);
   else v = buildCarLike(type, color);
+  optimizeModelMeshes(v);
   v.group.userData.vehicleType = type;
   v.group.userData.wheels = v.wheels;
   if (v.rider) v.group.userData.rider = v.rider;

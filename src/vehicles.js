@@ -262,16 +262,25 @@ export class Vehicle {
     const speedFactor = clamp(Math.abs(vf) / 7, 0, 1);
     const turnBoost = this.handbrake ? 1.45 : 1;
     const turnRate = 1.5 * speedFactor * (1 - clamp(Math.abs(vf) / cfg.maxSpeed, 0, 1) * .38) * turnBoost;
-    this.heading = normAngle(this.heading + this.steer * turnRate * dt * (vf < 0 ? -1 : 1));
-    // wet slide adds lateral velocity through the turn
+    // With this heading basis, positive steer means right and decreases yaw.
+    // Reverse steering is inverted because the rear of the vehicle leads in reverse.
+    this.heading = normAngle(this.heading - this.steer * turnRate * dt * (vf < 0 ? -1 : 1));
+    // inertia pushes the body outward through the turn
     if (wet || this.handbrake) {
-      vr += this.steer * vf * (wet ? .09 : .2) * dt * (this.handbrake ? 2.4 : 1);
+      vr -= this.steer * vf * (wet ? .09 : .2) * dt * (this.handbrake ? 2.4 : 1);
     }
     const nf = new THREE.Vector2(Math.sin(this.heading), Math.cos(this.heading));
     const nr = new THREE.Vector2(-nf.y, nf.x);
     this.velocity.set(nf.x * vf + nr.x * vr, nf.y * vf + nr.y * vr);
+    const prevX = this.pos.x, prevZ = this.pos.z;
     this.pos.x += this.velocity.x * dt;
     this.pos.z += this.velocity.y * dt;
+    if (this.game.city.isWater?.(this.pos.x, this.pos.z)) {
+      this.pos.x = prevX; this.pos.z = prevZ;
+      this.velocity.multiplyScalar(.15);
+      if (this.speed > 4) { this.game.audio?.crash?.(4); this.game.notify?.('Deep water ahead — use the bridge', 'warn'); }
+      this.speed *= .35;
+    }
     this.group.rotation.y = this.heading;
     // body roll / pitch
     if (this.wheels.length) {
@@ -308,7 +317,7 @@ export class Vehicle {
     let forwardSpeed = this.velocity.dot(f);
     const targetSpeed = engine ? this.throttle * cfg.maxSpeed - this.brakeInput * 10 : 0;
     forwardSpeed = lerp(forwardSpeed, targetSpeed, dt * .7);
-    this.heading = normAngle(this.heading + this.steer * dt * (1.15 + clamp(Math.abs(forwardSpeed) / 40, 0, .4)));
+    this.heading = normAngle(this.heading - this.steer * dt * (1.15 + clamp(Math.abs(forwardSpeed) / 40, 0, .4)));
     const nf = new THREE.Vector2(Math.sin(this.heading), Math.cos(this.heading));
     this.velocity.set(nf.x * forwardSpeed, nf.y * forwardSpeed);
     this.pos.x += this.velocity.x * dt;
@@ -359,7 +368,7 @@ export class Vehicle {
     vf *= 1 - dt * .25;
     vf = clamp(vf, -4, cfg.maxSpeed);
     vr *= Math.exp(-1.6 * dt);
-    this.heading = normAngle(this.heading + this.steer * 1.1 * clamp(Math.abs(vf) / 8, 0, 1) * dt);
+    this.heading = normAngle(this.heading - this.steer * 1.1 * clamp(Math.abs(vf) / 8, 0, 1) * dt);
     const nf = new THREE.Vector2(Math.sin(this.heading), Math.cos(this.heading));
     this.velocity.set(nf.x * vf, nf.y * vf);
     this.pos.x += this.velocity.x * dt;
@@ -509,7 +518,7 @@ export class VehicleManager {
     this.game = game;
     this.vehicles = [];
     this.playerVehicle = null;
-    this.trafficLimit = 34;
+    this.trafficLimit = 74;
     this.spawnedTraffic = false;
     this.pendingTraffic = [];
   }
@@ -521,7 +530,10 @@ export class VehicleManager {
   }
 
   spawnTraffic(count) {
-    const types = ['sedan', 'sedan', 'taxi', 'suv', 'sports', 'van', 'pickup', 'bus', 'truck', 'suv', 'sedan'];
+    const types = [
+      'sedan', 'sedan', 'sedan', 'taxi', 'taxi', 'suv', 'suv', 'sports', 'van', 'van',
+      'pickup', 'bus', 'bus', 'truck', 'truck', 'construction', 'motorcycle', 'motorcycle', 'sedan',
+    ];
     const existing = this.vehicles.filter(v => v.mode === 'traffic').length;
     const amount = Math.max(0, Math.min(Math.floor(count), this.trafficLimit - existing));
     let spawned = 0;
@@ -542,7 +554,10 @@ export class VehicleManager {
       const v = this.spawn(type, point.x, point.z, point.heading, {
         traffic: true, trafficRoute: point.route, color: randomVehicleColor(type), y: .02,
       });
-      v.traffic.cruise = type === 'bus' || type === 'truck' ? rand(7, 9) : rand(10, 14.5);
+      v.traffic.cruise = type === 'bus' || type === 'truck' ? rand(7, 9)
+        : type === 'construction' ? rand(5, 7)
+        : type === 'motorcycle' ? rand(13, 17)
+        : rand(10, 14.5);
       spawned++;
     }
     return spawned;

@@ -150,7 +150,8 @@ class Game {
 
       this.vehicles = new VehicleManager(this);
       this.vehicles.spawnParkedCity();
-      this.vehicles.spawnTraffic(30);
+      const trafficCount = this.settings.quality === 'low' ? 46 : 68;
+      this.vehicles.spawnTraffic(trafficCount);
       this.onTrafficCollision = (pv, other) => this.handleTrafficCollision(pv, other);
       this.onPedHit = (ped, pv) => this.handlePedHit(ped, pv);
       this.setLoading('Populating sidewalks · dispatching services', 68);
@@ -271,7 +272,9 @@ class Game {
       }
       if (!dx && !dy) return;
       const s = 0.0024;
-      this.player.cameraYaw += dx * s;
+      // Dragging right turns the view right (yaw decreases in this world basis).
+      this.player.cameraYaw -= dx * s;
+      this.player.lookHold = 1.6;
       this.player.cameraPitch = clamp(this.player.cameraPitch + (this.settings.invert ? -1 : 1) * dy * s, -0.55, 1.0);
     });
     window.addEventListener('wheel', (e) => {
@@ -312,7 +315,8 @@ class Game {
         if (justPressed(9)) this.togglePause();
       }
       if (lookX || lookY) {
-        this.player.cameraYaw += lookX * dt * 2.4;
+        this.player.cameraYaw -= lookX * dt * 2.4;
+        this.player.lookHold = 1.2;
         this.player.cameraPitch = clamp(this.player.cameraPitch + (this.settings.invert ? -1 : 1) * lookY * dt * 1.8, -0.55, 1.0);
       }
     } else {
@@ -596,7 +600,10 @@ class Game {
     if (p.vehicle) {
       inter = { action: 'exitVehicle', label: `Exit ${p.vehicle.cfg.name}` };
     } else if (p.riding) {
-      inter = { action: 'exitTransit', label: this.transit.mode === 'monorail' ? 'Exit monorail at station' : 'Leave the train' };
+      const label = this.transit.mode === 'monorail' ? 'Exit monorail at station'
+        : this.transit.mode === 'islandRail' ? 'Exit tram at station'
+        : 'Leave the train at a station';
+      inter = { action: 'exitTransit', label };
     } else if (this.interiors.current) {
       const near = this.interiors.nearestInteraction(p.pos.x, p.pos.z);
       if (near) inter = { action: 'interior', payload: near, label: near.label };
@@ -621,7 +628,7 @@ class Game {
 
   poiLabel(poi) {
     if (poi.type === 'monorail') return `Board monorail · ${poi.name.replace(' Monorail', '')}`;
-    if (poi.type === 'train') return 'Board commuter rail';
+    if (poi.type === 'train') return poi.line === 'island' ? 'Board the Palm Island Line' : 'Board commuter rail';
     if (poi.type === 'metro') return 'Ride the metro';
     if (poi.type === 'marina') return 'Visit Harbor Marina';
     if (poi.type === 'park') return 'Relax in Aurora Park';
@@ -648,7 +655,8 @@ class Game {
       return;
     }
     if (poi.type === 'train') {
-      this.transit.boardRail();
+      if (poi.line === 'island') this.transit.boardIslandRail(poi.station ?? 0);
+      else this.transit.boardRail();
       this.mode = 'riding';
       return;
     }
@@ -885,6 +893,7 @@ class Game {
   exitTransit() {
     if (this.transit.mode === 'monorail') this.transit.exitMonorail();
     else if (this.transit.mode === 'rail') this.transit.exitRail();
+    else if (this.transit.mode === 'islandRail') this.transit.exitIslandRail();
     else {
       this.player.riding = null;
       this.player.group.visible = true;
@@ -930,8 +939,7 @@ class Game {
   }
 
   toggleTransitControls() {
-    if (this.transit.mode !== 'monorail') return;
-    this.transit.toggleManual();
+    if (this.transit.mode === 'monorail' || this.transit.mode === 'rail') this.transit.toggleManual();
   }
 
   handleTrafficCollision(pv, other) {

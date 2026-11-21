@@ -39,6 +39,7 @@ export class Player {
     this.tmp = new THREE.Vector3();
     this.wantToSit = false;
     this.cinematic = null;
+    this.lookHold = 0;
   }
 
   buildModel() {
@@ -50,35 +51,90 @@ export class Player {
     const pantsMat = new THREE.MeshStandardMaterial({ color: this.clothing.pants, roughness: .9 });
     const shoeMat = new THREE.MeshStandardMaterial({ color: this.clothing.shoes, roughness: .7 });
     const hairMat = new THREE.MeshStandardMaterial({ color: this.clothing.hair, roughness: .9 });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: 0xe4e9ec, roughness: .86 });
+    const detailMat = new THREE.MeshStandardMaterial({ color: 0x141a20, roughness: .74, metalness: .18 });
+    const eyeMat = new THREE.MeshStandardMaterial({ color: 0xf3f5f2, roughness: .35 });
+    const irisMat = new THREE.MeshStandardMaterial({ color: 0x2c3f49, roughness: .3 });
     this.mats = { skinMat, jacketMat, pantsMat, shoeMat, hairMat };
 
-    const hips = new THREE.Group(); hips.position.y = .86; this.body.add(hips);
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(.22, .38, 4, 10), jacketMat);
-    torso.position.y = .38; torso.castShadow = true; hips.add(torso);
-    const chest = new THREE.Mesh(new THREE.BoxGeometry(.44, .22, .26), jacketMat); chest.position.y = .48; hips.add(chest);
-    const neck = new THREE.Mesh(new THREE.CylinderGeometry(.075, .085, .13, 8), skinMat); neck.position.y = .68; hips.add(neck);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(.175, 14, 12), skinMat); head.position.y = .82; head.castShadow = true; hips.add(head);
-    const hair = new THREE.Mesh(new THREE.SphereGeometry(.181, 12, 10, 0, TAU, 0, Math.PI * .58), hairMat);
-    hair.position.set(0, .845, -.006); hips.add(hair);
-    // arms
-    const armGeo = new THREE.CapsuleGeometry(.065, .4, 3, 8);
-    this.armL = new THREE.Group(); this.armL.position.set(-.29, .56, 0); hips.add(this.armL);
-    const armLMesh = new THREE.Mesh(armGeo, jacketMat); armLMesh.position.y = -.24; armLMesh.castShadow = true; this.armL.add(armLMesh);
-    const handL = new THREE.Mesh(new THREE.SphereGeometry(.07, 8, 6), skinMat); handL.position.y = -.48; this.armL.add(handL);
-    this.armR = new THREE.Group(); this.armR.position.set(.29, .56, 0); hips.add(this.armR);
-    const armRMesh = new THREE.Mesh(armGeo, jacketMat); armRMesh.position.y = -.24; armRMesh.castShadow = true; this.armR.add(armRMesh);
-    const handR = new THREE.Mesh(new THREE.SphereGeometry(.07, 8, 6), skinMat); handR.position.y = -.48; this.armR.add(handR);
-    // legs
-    const legGeo = new THREE.CapsuleGeometry(.085, .44, 3, 8);
-    this.legL = new THREE.Group(); this.legL.position.set(-.12, .02, 0); hips.add(this.legL);
-    const legLMesh = new THREE.Mesh(legGeo, pantsMat); legLMesh.position.y = -.27; legLMesh.castShadow = true; this.legL.add(legLMesh);
-    const shoeL = new THREE.Mesh(new THREE.BoxGeometry(.17, .1, .3), shoeMat); shoeL.position.set(0, -.53, .05); this.legL.add(shoeL);
-    this.legR = new THREE.Group(); this.legR.position.set(.12, .02, 0); hips.add(this.legR);
-    const legRMesh = new THREE.Mesh(legGeo, pantsMat); legRMesh.position.y = -.27; legRMesh.castShadow = true; this.legR.add(legRMesh);
-    const shoeR = new THREE.Mesh(new THREE.BoxGeometry(.17, .1, .3), shoeMat); shoeR.position.set(0, -.53, .05); this.legR.add(shoeR);
+    const hips = new THREE.Group(); hips.position.y = .88; this.body.add(hips);
+    this.addPart = (geo, mat, x, y, z, parent = hips) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.castShadow = true;
+      parent.add(m);
+      return m;
+    };
+
+    // pelvis, belt and tailored jacket
+    this.addPart(new THREE.BoxGeometry(.38, .26, .27), pantsMat, 0, -.04, 0);
+    this.addPart(new THREE.BoxGeometry(.405, .075, .285), detailMat, 0, .09, 0);
+    this.addPart(new THREE.CapsuleGeometry(.238, .4, 5, 12), jacketMat, 0, .37, 0);
+    this.addPart(new THREE.BoxGeometry(.5, .16, .3), jacketMat, 0, .57, 0);
+    this.addPart(new THREE.BoxGeometry(.34, .08, .28), jacketMat, 0, .64, 0);
+    this.addPart(new THREE.BoxGeometry(.026, .34, .022), detailMat, 0, .38, .239);
+    this.addPart(new THREE.BoxGeometry(.16, .16, .025), shirtMat, 0, .53, .232);
+    for (const s of [-1, 1]) {
+      const lapel = this.addPart(new THREE.BoxGeometry(.11, .2, .035), jacketMat, s * .1, .52, .235);
+      lapel.rotation.z = s * .22;
+      this.addPart(new THREE.BoxGeometry(.13, .1, .025), detailMat, s * .14, .25, .235);
+    }
+    // backpack with straps
+    this.addPart(new THREE.BoxGeometry(.34, .42, .16), detailMat, 0, .4, -.245);
+    this.addPart(new THREE.BoxGeometry(.28, .08, .07), detailMat, 0, .58, -.32);
+    for (const s of [-1, 1]) this.addPart(new THREE.BoxGeometry(.045, .34, .025), detailMat, s * .14, .43, .235);
+
+    // neck, head and face
+    this.addPart(new THREE.CylinderGeometry(.072, .084, .14, 9), skinMat, 0, .7, 0);
+    const head = this.addPart(new THREE.SphereGeometry(.182, 18, 14), skinMat, 0, .865, 0);
+    head.scale.set(.94, 1.05, .96);
+    this.addPart(new THREE.BoxGeometry(.18, .09, .14), skinMat, 0, .77, .055);
+    for (const s of [-1, 1]) {
+      this.addPart(new THREE.SphereGeometry(.045, 8, 6), skinMat, s * .177, .87, .012);
+      const eye = this.addPart(new THREE.SphereGeometry(.036, 10, 8), eyeMat, s * .067, .9, .148);
+      eye.scale.set(1, .82, .55);
+      this.addPart(new THREE.SphereGeometry(.017, 8, 6), irisMat, s * .067, .9, .181);
+      const brow = this.addPart(new THREE.BoxGeometry(.075, .016, .02), hairMat, s * .068, .944, .166);
+      brow.rotation.z = -s * .1;
+    }
+    this.addPart(new THREE.BoxGeometry(.045, .1, .06), skinMat, 0, .855, .185);
+    this.addPart(new THREE.BoxGeometry(.078, .018, .018), new THREE.MeshStandardMaterial({ color: 0x6d3c33, roughness: .7 }), 0, .792, .178);
+    const hair = this.addPart(new THREE.SphereGeometry(.19, 14, 12, 0, TAU, 0, Math.PI * .56), hairMat, 0, .884, -.008);
+    hair.scale.set(.99, 1.02, 1.0);
+    this.addPart(new THREE.BoxGeometry(.3, .1, .08), hairMat, 0, .93, -.16);
+
+    // arms with elbows and hands
+    const makeArm = (side) => {
+      const shoulder = new THREE.Group(); shoulder.position.set(side * .305, .565, 0); hips.add(shoulder);
+      this.addPart(new THREE.CapsuleGeometry(.072, .24, 4, 9), jacketMat, 0, -.17, 0, shoulder);
+      const elbow = new THREE.Group(); elbow.position.y = -.34; shoulder.add(elbow);
+      this.addPart(new THREE.CapsuleGeometry(.062, .23, 4, 9), jacketMat, 0, -.14, 0, elbow);
+      this.addPart(new THREE.SphereGeometry(.07, 10, 8), skinMat, 0, -.3, 0, elbow);
+      const fingers = this.addPart(new THREE.BoxGeometry(.1, .09, .06), skinMat, 0, -.35, .02, elbow);
+      fingers.scale.set(1, .9, 1);
+      return { shoulder, elbow };
+    };
+    const armL = makeArm(-1), armR = makeArm(1);
+    this.armL = armL.shoulder; this.elbowL = armL.elbow;
+    this.armR = armR.shoulder; this.elbowR = armR.elbow;
+
+    // legs with knees, trousers and shoes
+    const makeLeg = (side) => {
+      const hip = new THREE.Group(); hip.position.set(side * .118, -.02, 0); hips.add(hip);
+      this.addPart(new THREE.CapsuleGeometry(.095, .25, 4, 9), pantsMat, 0, -.16, 0, hip);
+      const knee = new THREE.Group(); knee.position.y = -.33; hip.add(knee);
+      this.addPart(new THREE.CapsuleGeometry(.079, .23, 4, 9), pantsMat, 0, -.15, 0, knee);
+      const shoe = this.addPart(new THREE.BoxGeometry(.185, .11, .33), shoeMat, 0, -.32, .04, knee);
+      shoe.scale.set(1, 1, 1);
+      this.addPart(new THREE.BoxGeometry(.2, .045, .35), detailMat, 0, -.373, .045, knee);
+      return { hip, knee };
+    };
+    const legL = makeLeg(-1), legR = makeLeg(1);
+    this.legL = legL.hip; this.kneeL = legL.knee;
+    this.legR = legR.hip; this.kneeR = legR.knee;
     this.hips = hips;
-    // shadow blob
-    const shadow = new THREE.Mesh(new THREE.CircleGeometry(.42, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .24, depthWrite: false }));
+
+    const shadow = new THREE.Mesh(new THREE.CircleGeometry(.44, 18), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .24, depthWrite: false }));
     shadow.rotation.x = -Math.PI / 2; shadow.position.y = .012; g.add(shadow);
     this.shadow = shadow;
   }
@@ -103,6 +159,7 @@ export class Player {
     this.group.visible = false;
     this.shadow.visible = false;
     this.riding = null;
+    this.lookHold = 0;
     this.cameraYaw = v.heading;
     this.cameraPitch = v.isAir ? .18 : .1;
     this.cameraDist = v.cfg.len > 6 ? 11 : v.cfg.len > 4.8 ? 7.4 : 5.6;
@@ -188,7 +245,11 @@ export class Player {
   updateVehicleCamera(dt) {
     const v = this.vehicle;
     const cam = this.camera;
-    const yaw = v.heading + this.cameraYaw * 0; // vehicle camera orbit uses absolute yaw set by input
+    // The chase camera follows the vehicle heading. Mouse/stick look adds a
+    // temporary orbit which eases back behind the car once released.
+    if (this.lookHold > 0) this.lookHold -= dt;
+    else this.cameraYaw = lerpAngle(this.cameraYaw, v.heading, clamp(dt * 3.4, 0, 1));
+    const yaw = this.cameraYaw;
     const baseDist = v.isAir ? 13 : v.cfg.len > 6 ? 13 : v.cfg.len > 4.8 ? 9 : 7.2;
     const dist = this.cameraDist || baseDist;
     const pitch = this.cameraPitch;
@@ -221,13 +282,35 @@ export class Player {
     const r = this.riding;
     const cam = this.camera;
     const t = r.group ? r.group.position : r.pos;
+    const trainHeading = r.group?.rotation.y ?? this.cameraYaw;
+    if (this.lookHold > 0) this.lookHold -= dt;
+    else this.cameraYaw = lerpAngle(this.cameraYaw, trainHeading, clamp(dt * 2.2, 0, 1));
     const yaw = this.cameraYaw;
-    const dist = this.cameraDist;
-    const target = new THREE.Vector3(t.x, t.y + 2, t.z);
+    // The train geometry grows backwards along its local -Z axis, so aim at
+    // the middle of the consist rather than the lead car's origin.
+    const cars = r.group?.userData?.cars;
+    const trainLen = r.group?.userData?.trainLength ?? (cars?.length ? (cars.length - 1) * 10.6 + 10 : 22);
+    const fx = Math.sin(trainHeading), fz = Math.cos(trainHeading);
+    if (this.firstPerson) {
+      const eye = new THREE.Vector3(t.x + fx * 1.8, t.y + 2.3, t.z + fz * 1.8);
+      cam.position.lerp(eye, clamp(dt * 8, 0, 1));
+      cam.lookAt(eye.x + fx * 30, eye.y - .25 + Math.sin(this.cameraPitch) * 14, eye.z + fz * 30);
+      return;
+    }
+    const mid = new THREE.Vector3(
+      t.x - fx * (trainLen * .5 - 5),
+      t.y + 2.1,
+      t.z - fz * (trainLen * .5 - 5)
+    );
+    const dist = (this.cameraDist || 18) + trainLen * .55;
     const back = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw)).multiplyScalar(dist);
-    const desired = new THREE.Vector3(target.x + back.x, target.y + 2.2 + Math.sin(this.cameraPitch) * dist, target.z + back.z);
+    const desired = new THREE.Vector3(
+      mid.x + back.x,
+      mid.y + 4.4 + Math.sin(this.cameraPitch) * dist * .55,
+      mid.z + back.z
+    );
     cam.position.lerp(desired, clamp(dt * 4, 0, 1));
-    cam.lookAt(target);
+    cam.lookAt(mid);
   }
 
   update(dt, input) {
@@ -246,10 +329,13 @@ export class Player {
     let mz = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
     const mag = Math.hypot(mx, mz);
     if (mag > 0) { mx /= mag; mz /= mag; }
+    // Camera-relative forward is the screen-up direction.  Right is always
+    // the camera's right vector, independent of keyboard/gamepad source.
     const f = new THREE.Vector2(Math.sin(yaw), Math.cos(yaw));
     const r = new THREE.Vector2(-f.y, f.x);
-    const sprint = input.sprint;
-    const speed = this.crouching ? 2.1 : sprint ? 6.9 : 3.7;
+    const sprint = !!input.sprint;
+    const crouching = !!this.crouching;
+    const speed = crouching ? 2.1 : sprint ? 6.9 : 3.7;
     const targetVel = new THREE.Vector2(f.x * mz + r.x * mx, f.y * mz + r.y * mx).multiplyScalar(speed * (mag > 0 ? 1 : 0));
     const accel = this.onGround ? 16 : 5;
     this.velocity.x = lerp(this.velocity.x, targetVel.x, clamp(dt * accel, 0, 1));
@@ -269,8 +355,13 @@ export class Player {
       this.velocity.x *= .3; this.velocity.z *= .3;
     }
     // world bounds
-    nx = clamp(nx, -660, 760);
-    nz = clamp(nz, -660, 500);
+    nx = clamp(nx, -680, 820);
+    nz = clamp(nz, -660, 900);
+    // Deep water is not walkable; the islands are reached over the bridges.
+    if (this.game.city.isWater?.(nx, nz)) {
+      nx = this.pos.x; nz = this.pos.z;
+      this.velocity.multiplyScalar(.2);
+    }
     this.pos.x = nx; this.pos.z = nz;
     // jump / gravity
     if (input.jump && this.onGround) {
@@ -299,29 +390,49 @@ export class Player {
 
   animate(dt, speed, sprint) {
     this.animT += dt;
+    const kneeL = this.kneeL, kneeR = this.kneeR;
     if (speed > .2) {
       this.walkPhase += dt * (sprint ? 12 : 7.5) * clamp(speed / 3.5, .5, 1.6);
       const swing = Math.sin(this.walkPhase) * (sprint ? .78 : .5);
       this.legL.rotation.x = swing;
       this.legR.rotation.x = -swing;
+      kneeL.rotation.x = Math.max(0, -swing) * 1.15;
+      kneeR.rotation.x = Math.max(0, swing) * 1.15;
+      this.elbowL.rotation.x = -.28 - Math.max(0, swing) * .5;
+      this.elbowR.rotation.x = -.28 - Math.max(0, -swing) * .5;
       this.armL.rotation.x = -swing * .8;
       this.armR.rotation.x = swing * .8;
-      this.hips.position.y = .86 + Math.abs(Math.sin(this.walkPhase)) * (sprint ? .07 : .035);
-      this.body.rotation.x = sprint ? -.14 : -.03;
+      this.armL.rotation.z = .045;
+      this.armR.rotation.z = -.045;
+      this.hips.position.y = .88 + Math.abs(Math.sin(this.walkPhase)) * (sprint ? .075 : .038);
+      this.body.rotation.x = sprint ? -.16 : -.035;
+      this.body.rotation.y = Math.sin(this.walkPhase) * (sprint ? .07 : .045);
+      this.hips.rotation.z = Math.sin(this.walkPhase) * (sprint ? .035 : .02);
     } else {
       this.idleT += dt;
       const idle = Math.sin(this.idleT * 1.6) * .02;
+      const breath = Math.sin(this.idleT * 1.6) * .012;
       this.legL.rotation.x = lerp(this.legL.rotation.x, 0, dt * 7);
       this.legR.rotation.x = lerp(this.legR.rotation.x, 0, dt * 7);
+      kneeL.rotation.x = lerp(kneeL.rotation.x, .03, dt * 6);
+      kneeR.rotation.x = lerp(kneeR.rotation.x, .03, dt * 6);
       this.armL.rotation.x = lerp(this.armL.rotation.x, -idle, dt * 6);
       this.armR.rotation.x = lerp(this.armR.rotation.x, idle, dt * 6);
-      this.hips.position.y = .86 + idle * .2;
+      this.armL.rotation.z = lerp(this.armL.rotation.z, .08, dt * 5);
+      this.armR.rotation.z = lerp(this.armR.rotation.z, -.08, dt * 5);
+      this.elbowL.rotation.x = lerp(this.elbowL.rotation.x, -.22, dt * 5);
+      this.elbowR.rotation.x = lerp(this.elbowR.rotation.x, -.22, dt * 5);
+      this.hips.position.y = .88 + idle * .18 + breath;
+      this.hips.rotation.z = lerp(this.hips.rotation.z, 0, dt * 5);
       this.body.rotation.x = lerp(this.body.rotation.x, 0, dt * 5);
+      this.body.rotation.y = lerp(this.body.rotation.y, 0, dt * 5);
     }
     // vertical bob / jump pose
     if (!this.onGround) {
       this.legL.rotation.x = .45; this.legR.rotation.x = -.25;
+      kneeL.rotation.x = .8; kneeR.rotation.x = .45;
       this.armL.rotation.x = -.7; this.armR.rotation.x = -.7;
+      this.elbowL.rotation.x = -.4; this.elbowR.rotation.x = -.4;
     }
     this.shadow.position.y = this.groundY - this.pos.y + .012;
     this.shadow.material.opacity = clamp(.26 - (this.pos.y - this.groundY) * .08, .05, .3);

@@ -405,6 +405,7 @@ export class TransitSystem {
     const p = this.game.player;
     p.riding = m;
     p.group.visible = false;
+    p.shadow.visible = false;
     p.vehicle = null;
     p.cameraYaw = m.group.rotation.y;
     p.cameraDist = 18;
@@ -444,41 +445,95 @@ export class TransitSystem {
   }
 
   toggleManual() {
-    if (this.mode !== 'monorail') return;
-    const m = this.game.city.monorail;
-    m.manual = !m.manual;
-    this.manual = m.manual;
-    m.targetSpeed = m.manual ? Math.max(4, m.speed) : 11;
-    this.game.ui?.updateTransitMode(m.manual ? 'Manual control' : 'Automatic', m.manual ? 'W/S throttle · E exit' : 'Aurora Loop');
-    this.game.notify(m.manual ? 'Manual train control enabled' : 'Automatic train control enabled', 'good');
+    if (this.mode === 'monorail') {
+      const m = this.game.city.monorail;
+      m.manual = !m.manual;
+      this.manual = m.manual;
+      m.targetSpeed = m.manual ? Math.max(4, m.speed) : 11;
+      this.game.ui?.updateTransitMode(m.manual ? 'Manual control' : 'Automatic', m.manual ? 'W/S throttle · E exit' : 'Aurora Loop');
+      this.game.notify(m.manual ? 'Manual train control enabled' : 'Automatic train control enabled', 'good');
+      return;
+    }
+    if (this.mode === 'rail') {
+      const rail = this.game.city.rail;
+      rail.auto = !rail.auto;
+      if (rail.auto) rail.dwell = 0;
+      this.game.ui?.updateTransitMode(rail.auto ? 'Automatic' : 'Manual control', rail.auto ? 'Station stops' : 'W/S throttle · E exit');
+      this.game.notify(rail.auto ? 'Automatic station stops enabled' : 'Manual train control enabled', 'good');
+    }
   }
 
   boardRail() {
     const rail = this.game.city.rail;
     if (!rail) return;
     const p = this.game.player;
-    p.riding = { group: rail.group, isRail: true };
+    p.riding = { group: rail.group, isRail: true, trainLength: rail.trainLength || 70 };
     p.group.visible = false;
+    p.shadow.visible = false;
+    p.vehicle = null;
     p.cameraYaw = Math.PI / 2;
-    p.cameraDist = 22;
+    p.cameraDist = 12;
+    p.cameraPitch = .16;
     this.mode = 'rail';
     this.currentRail = rail;
     this.game.mode = 'riding';
-    this.game.notify('Boarded commuter rail — W/S to control, E to disembark', 'good');
-    this.game.ui?.showTransit('COMMUTER RAIL', 'Nova Central Line', 'Manual control');
+    this.game.notify('Boarded commuter rail — E to disembark at a station, T for manual control', 'good');
+    this.game.ui?.showTransit('COMMUTER RAIL', 'Nova Central Line', rail.auto ? 'Automatic' : 'Manual control');
   }
 
   exitRail() {
     const rail = this.game.city.rail;
     const p = this.game.player;
-    const x = rail.group.position.x;
-    const z = rail.group.position.z;
+    const stationIndex = rail.currentStation;
+    if (stationIndex < 0 || rail.speed > .35) {
+      this.game.notify('Wait until the train stops at a station', 'warn');
+      return;
+    }
+    const st = rail.stations[stationIndex];
     p.riding = null; p.group.visible = true; p.shadow.visible = true;
-    p.setPosition(clamp(x, -600, 600), z + 12, .2);
+    p.setPosition(st.x, st.z + 1, .2);
     p.cameraYaw = 0;
+    rail.auto = true; rail.dwell = 0; rail.departCool = 4.5;
     this.mode = 'none'; this.game.mode = 'playing';
     this.game.ui?.hideTransit();
-    this.game.notify('Left the train at Nova Central', 'good');
+    this.game.notify(`Left the train at ${st.name}`, 'good');
+  }
+
+  boardIslandRail(stationIndex = 0) {
+    const rail = this.game.city.islandRail;
+    if (!rail) return;
+    const p = this.game.player;
+    p.riding = rail;
+    p.group.visible = false;
+    p.shadow.visible = false;
+    p.vehicle = null;
+    p.cameraYaw = rail.group.rotation.y;
+    p.cameraDist = 12;
+    p.cameraPitch = .18;
+    this.mode = 'islandRail';
+    this.currentRail = rail;
+    this.game.mode = 'riding';
+    this.game.notify('Boarded the Palm Island Line — E to step off at a station', 'good');
+    this.game.audio?.chime();
+    this.game.ui?.showTransit('PALM ISLAND LINE', 'Harbor ↔ Palm Island', 'Automatic');
+  }
+
+  exitIslandRail() {
+    const rail = this.game.city.islandRail;
+    const p = this.game.player;
+    const stationIndex = rail.stoppedAtStation();
+    if (stationIndex < 0) {
+      this.game.notify('Wait for the tram to stop at a station', 'warn');
+      return;
+    }
+    const st = rail.stations[stationIndex];
+    p.riding = null; p.group.visible = true; p.shadow.visible = true;
+    p.setPosition(st.exit.x, st.exit.z, .2);
+    p.cameraYaw = Math.PI;
+    p.velocity.set(0, 0, 0);
+    this.mode = 'none'; this.game.mode = 'playing';
+    this.game.ui?.hideTransit();
+    this.game.notify(`Stepped off at ${st.name}`, 'good');
   }
 
   update(dt, input) {
@@ -491,10 +546,17 @@ export class TransitSystem {
       this.game.ui?.updateTransitSpeed(m.speed, m.dwell > 0 ? 'DOORS OPEN' : m.currentStation >= 0 ? m.stations[m.currentStation].name : 'EN ROUTE');
     } else if (this.mode === 'rail') {
       const rail = this.game.city.rail;
-      if (input.forward) rail.speed = clamp(rail.speed + 5 * dt, 0, 28);
-      if (input.back) rail.speed = clamp(rail.speed - 7 * dt, 0, 28);
-      if (input.brake) rail.speed = 0;
-      this.game.ui?.updateTransitSpeed(rail.speed, 'NOVA CENTRAL LINE');
+      if (!rail.auto) {
+        if (input.forward) rail.speed = clamp(rail.speed + 5 * dt, 0, 28);
+        if (input.back) rail.speed = clamp(rail.speed - 7 * dt, 0, 28);
+        if (input.brake) rail.speed = 0;
+      }
+      const st = rail.currentStation >= 0 ? rail.stations[rail.currentStation].name : null;
+      this.game.ui?.updateTransitSpeed(rail.speed, st ? `AT ${st.toUpperCase()}` : rail.dwell > 0 ? 'DOORS OPEN' : 'NOVA CENTRAL LINE');
+    } else if (this.mode === 'islandRail') {
+      const rail = this.game.city.islandRail;
+      const st = rail.currentStation >= 0 ? rail.stations[rail.currentStation].name : null;
+      this.game.ui?.updateTransitSpeed(rail.speed, st ? `AT ${st.toUpperCase()}` : rail.dwell > 0 ? 'DOORS OPEN' : 'HARBOR ↔ PALM ISLAND');
     }
   }
 
