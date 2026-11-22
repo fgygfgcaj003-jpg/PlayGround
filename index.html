@@ -7,8 +7,8 @@
   <meta name="description" content="NOVA CITY — a living open-world 3D city life simulator." />
   <title>NOVA CITY — Open World Life Simulator</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%235be0ff'/%3E%3Ctext x='32' y='45' font-family='Arial' font-size='38' font-weight='700' text-anchor='middle' fill='%23041018'%3EN%3C/text%3E%3C/svg%3E" />
-  <script type="module" crossorigin src="./assets/index-BZifF1b5.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DNR26hNu.css">
+  <script type="module" crossorigin src="./assets/index-Bud16V-u.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BcgVs_Wk.css">
 </head>
 <body>
   <canvas id="game"></canvas>
@@ -68,7 +68,7 @@
     </div>
 
     <div class="hud-top-right">
-      <div class="clock-panel glass">
+      <div class="clock-panel glass" id="clock-panel" role="button" tabindex="0" aria-label="Open watch">
         <div class="time" id="clock">06:20</div>
         <div class="sub"><span id="weather-label">Clear</span> · <span id="temp-label">18°C</span></div>
         <div class="daybar"><i id="daybar"></i></div>
@@ -114,9 +114,11 @@
     </div>
     <div class="phone-controls" id="phone-controls" aria-label="Touch controls">
       <div class="touch-stick" id="touch-stick" aria-label="Movement joystick"><div class="touch-stick-thumb" id="touch-stick-thumb"></div></div>
+      <div class="touch-stick look-stick" id="look-stick" aria-label="Camera joystick"><span class="look-stick-label">LOOK</span><div class="touch-stick-thumb" id="look-stick-thumb"><i class="look-glyph">◎</i></div></div>
       <div class="touch-actions">
-        <button data-touch-action="map" aria-label="Map">◇</button>
+        <button class="map-btn" data-touch-action="map" aria-label="Open map">◇ Map</button>
         <button data-touch-action="phone" aria-label="Phone">☎</button>
+        <button data-touch-action="watch" aria-label="Watch">◷</button>
         <button data-touch-action="sprint" data-i18n="sprint">Sprint</button>
         <button data-touch-action="jump" data-i18n="jump">Jump</button>
         <button class="vehicle-control" data-touch-action="throttle" aria-label="Accelerate">▲ Gas</button>
@@ -138,7 +140,7 @@
       <div class="phone-shell">
         <div class="phone-notch"></div>
         <div class="phone-screen">
-          <div class="phone-status"><span id="phone-time">06:20</span><span>NOVA LTE ▮▮▮</span></div>
+          <div class="phone-status"><span id="phone-time">06:20</span><span>NOVA LTE ▮▮▮</span><button class="phone-close" id="phone-close" data-close aria-label="Close phone">✕</button></div>
           <div class="phone-header"><b>NOVA</b><span id="phone-cash">$2,500</span></div>
           <div class="phone-apps" id="phone-apps">
             <button data-phone-tab="home" class="active"><i>⌂</i>Home</button>
@@ -190,6 +192,28 @@
         <div class="map-footer">
           <span id="map-pos">—</span>
           <span id="map-hint">Click map to set a GPS waypoint</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="overlay-panel watch-panel hidden" data-panel="watch">
+      <div class="watch-wrap">
+        <button class="close-overlay watch-close" data-close aria-label="Close watch">Esc</button>
+        <div class="watch-case" id="watch-face">
+          <div class="watch-strap top"></div>
+          <div class="watch-dial">
+            <div class="watch-kicker">NOVA</div>
+            <div class="watch-time" id="watch-time">06:20</div>
+            <div class="watch-date" id="watch-date">MON · NOVA CITY</div>
+            <div class="watch-weather" id="watch-weather">CLEAR · 18°C</div>
+            <div class="watch-battery"><i></i></div>
+            <div class="watch-hint">Tap the watch to close</div>
+          </div>
+          <div class="watch-strap bottom"></div>
+        </div>
+        <div class="watch-actions">
+          <button class="btn ghost" data-overlay="phone"><span>☎ Phone</span></button>
+          <button class="btn ghost" data-overlay="map"><span>◇ Map</span></button>
         </div>
       </div>
     </section>
