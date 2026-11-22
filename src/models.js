@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { clamp, rand, pick } from './utils.js';
 
 const glassMat = new THREE.MeshStandardMaterial({ color: 0x0a141d, roughness: 0.08, metalness: 0.75 });
@@ -113,6 +114,9 @@ function addMesh(parent, geo, mat, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0, 
 }
 
 function box(w, h, d) { return new THREE.BoxGeometry(w, h, d); }
+function roundedBox(w, h, d, r = .1, seg = 2) {
+  return new RoundedBoxGeometry(Math.max(w, .01), Math.max(h, .01), Math.max(d, .01), seg, Math.min(r, Math.min(w, h, d) * .45));
+}
 
 function makeWheels(group, cfg, countFront = 2, countRear = 2, allWheel = false) {
   const wheels = [];
@@ -217,18 +221,18 @@ function buildCarLike(type, color) {
   const bodyH = cfg.height * .42;
   const y0 = cfg.wheelR + bodyH / 2 + .04;
 
-  const body = addMesh(group, box(wid * .96, bodyH, len * .97), bodyMat, 0, y0, 0);
+  const body = addMesh(group, roundedBox(wid * .96, bodyH, len * .97, .12, 2), bodyMat, 0, y0, 0);
   body.userData.panel = true;
   // hood / trunk step
-  addMesh(group, box(wid * .92, bodyH * .55, len * .23), bodyMat, 0, y0 + bodyH * .25, len * .33);
-  addMesh(group, box(wid * .9, bodyH * .5, len * .18), bodyMat, 0, y0 + bodyH * .22, -len * .36);
+  addMesh(group, roundedBox(wid * .92, bodyH * .55, len * .23, .08), bodyMat, 0, y0 + bodyH * .25, len * .33);
+  addMesh(group, roundedBox(wid * .9, bodyH * .5, len * .18, .08), bodyMat, 0, y0 + bodyH * .22, -len * .36);
   // cabin
   const cabLen = len * (type === 'super' ? .34 : type === 'sports' ? .38 : .42);
   const cabW = wid * .82, cabH = cfg.height * (type === 'super' ? .24 : .3);
   const cabZ = type === 'sports' || type === 'super' ? -len * .04 : -len * .06;
-  const glassCab = addMesh(group, box(cabW, cabH, cabLen), glassMat, 0, y0 + bodyH / 2 + cabH / 2, cabZ);
+  const glassCab = addMesh(group, roundedBox(cabW, cabH, cabLen, .09), glassMat, 0, y0 + bodyH / 2 + cabH / 2, cabZ);
   glassCab.userData.panel = true;
-  const roof = addMesh(group, box(cabW * .94, .09, cabLen * .86), bodyMat, 0, y0 + bodyH / 2 + cabH - .02, cabZ - .05);
+  const roof = addMesh(group, roundedBox(cabW * .94, .12, cabLen * .86, .06), bodyMat, 0, y0 + bodyH / 2 + cabH - .02, cabZ - .05);
   // pillars
   for (const s of [-1, 1]) {
     addMesh(group, box(.06, cabH, .08), bodyMat, s * cabW / 2, y0 + bodyH / 2 + cabH / 2, cabZ + cabLen / 2, 0, 0, 0);
@@ -296,7 +300,7 @@ function buildBus(color, type = 'bus') {
   const len = cfg.len, wid = cfg.wid;
   const bodyH = cfg.height * .78;
   const y0 = cfg.wheelR + bodyH / 2 + .08;
-  addMesh(group, box(wid * .98, bodyH, len * .98), bodyMat, 0, y0, 0);
+  addMesh(group, roundedBox(wid * .98, bodyH, len * .98, .16, 2), bodyMat, 0, y0, 0);
   addMesh(group, box(wid * 1.0, .3, len * .99), trimMat, 0, cfg.wheelR + .25, 0);
   addMesh(group, box(wid * .96, .18, len * .99), silverMat, 0, y0 + bodyH * .2, 0);
   // window strips

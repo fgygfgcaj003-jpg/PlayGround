@@ -60,6 +60,9 @@ export class Vehicle {
     this.speedKmh = 0;
     this.brakeOn = false;
     this.cruise = 0;
+    this.lastSpeed = 0;
+    this.offroad = false;
+    this.suspension = 0;
     this.lodTick = Math.random() * 4;
     if (opts.traffic) this.initTraffic(opts.trafficRoute);
     if (this.service) this.addServiceLights();
@@ -235,6 +238,7 @@ export class Vehicle {
     this.brakeInput = controls.brake || 0;
     this.handbrake = !!controls.handbrake;
     const offroad = !this.game.city.isOnRoad(this.pos.x, this.pos.z);
+    this.offroad = offroad;
     const wet = weather === 'rain' || weather === 'storm';
     const maxSpeed = cfg.maxSpeed * damageFactor * (offroad ? .62 : 1) * (wet ? .86 : 1);
     // reverse handling
@@ -282,11 +286,16 @@ export class Vehicle {
       this.speed *= .35;
     }
     this.group.rotation.y = this.heading;
-    // body roll / pitch
+    // suspension: body roll, brake dive, acceleration squat and off-road shake
     if (this.wheels.length) {
-      this.group.rotation.z = lerp(this.group.rotation.z, -this.steer * clamp(vf / 40, 0, 1) * .055, dt * 5);
-      this.group.rotation.x = lerp(this.group.rotation.x, clamp((this.throttle - this.brakeInput) * .012, -.02, .02), dt * 4);
+      const accel = (vf - this.lastSpeed) / Math.max(dt, .001);
+      this.offroadShake = offroad ? clamp(Math.abs(vf) / 14, 0, 1) : 0;
+      const rollTarget = clamp(-this.steer * Math.abs(vf) * .0037, -.12, .12);
+      const pitchTarget = clamp(-accel * .0058, -.085, .085) + (offroad ? Math.sin(performance.now() * .012) * .012 : 0);
+      this.group.rotation.z = lerp(this.group.rotation.z, rollTarget, clamp(dt * 7, 0, 1));
+      this.group.rotation.x = lerp(this.group.rotation.x, pitchTarget, clamp(dt * 6, 0, 1));
     }
+    this.lastSpeed = vf;
     this.speed = vf;
     this.speedKmh = Math.abs(vf) * 3.6;
     this.brakeOn = this.brakeInput > 0 || (this.throttle === 0 && Math.abs(vf) > .2) || this.handbrake;
@@ -433,9 +442,15 @@ export class Vehicle {
 
   animateWheels(dt) {
     const roll = this.speed * dt / (this.cfg.wheelR || .35);
+    const t = performance.now() * .001;
+    let i = 0;
     for (const w of this.wheels) {
+      if (w.baseY === undefined) w.baseY = w.mesh.position.y;
+      const bump = (this.offroad ? .035 : .007) * clamp(Math.abs(this.speed) / 9, 0, 1);
+      w.mesh.position.y = w.baseY + Math.sin(t * 13 + i * 1.7) * bump;
       w.mesh.rotation.x += roll;
-      if (w.front) w.mesh.rotation.y = this.steer * .42;
+      if (w.front) w.mesh.rotation.y = this.steer * .46;
+      i++;
     }
   }
 
@@ -519,7 +534,7 @@ export class VehicleManager {
     this.game = game;
     this.vehicles = [];
     this.playerVehicle = null;
-    this.trafficLimit = 74;
+    this.trafficLimit = 165;
     this.spawnedTraffic = false;
     this.pendingTraffic = [];
   }

@@ -172,6 +172,23 @@ export class AudioEngine {
     }
   }
 
+  trainHorn() {
+    if (!this.ready) return;
+    const now = performance.now();
+    if (now - (this.lastTrainHorn || 0) < 1400) return;
+    this.lastTrainHorn = now;
+    const ctx = this.ctx, t = ctx.currentTime;
+    for (const [f, vol] of [[138, .07], [174, .055], [207, .04]]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + .08);
+      g.gain.setValueAtTime(vol, t + .75);
+      g.gain.exponentialRampToValueAtTime(.0001, t + 1.45);
+      o.connect(g); g.connect(this.master); o.start(t); o.stop(t + 1.5);
+    }
+  }
+
   click() { this.beep(520, .04, 'sine', .04); }
   jump() { this.beep(220, .12, 'sine', .03); }
   footstep(sprint) {

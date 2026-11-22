@@ -76,7 +76,7 @@ class Game {
     this.jumpBuffer = 0;
     this.input = { ...IDLE_INPUT };
     this.controls = { vehicle: {} };
-    this.touch = { x: 0, y: 0, sprint: false, jump: false, throttle: false, brake: false };
+    this.touch = { x: 0, y: 0, lookX: 0, lookY: 0, sprint: false, jump: false, throttle: false, brake: false };
     this.elapsed = 0;
     this.ui = null;
     this.player = null;
@@ -138,6 +138,7 @@ class Game {
       await nextFrame(); await nextFrame();
 
       this.city = new City(this.scene);
+      this.city.game = this;
       this.night = this.city.night;
       this.setLoading('Paving roads · raising the skyline', 34);
       await nextFrame();
@@ -150,7 +151,7 @@ class Game {
 
       this.vehicles = new VehicleManager(this);
       this.vehicles.spawnParkedCity();
-      const trafficCount = this.settings.quality === 'low' ? 46 : 68;
+      const trafficCount = this.settings.quality === 'low' ? 84 : 140;
       this.vehicles.spawnTraffic(trafficCount);
       this.onTrafficCollision = (pv, other) => this.handleTrafficCollision(pv, other);
       this.onPedHit = (ped, pv) => this.handlePedHit(ped, pv);
@@ -345,6 +346,11 @@ class Game {
       this.input.left = this.touch.x < -0.25;
       this.input.right = this.touch.x > 0.25;
       this.input.sprint = this.touch.sprint;
+      if (this.touch.lookX || this.touch.lookY) {
+        this.player.cameraYaw -= this.touch.lookX * dt * 2.4;
+        this.player.lookHold = 1.2;
+        this.player.cameraPitch = clamp(this.player.cameraPitch + (this.settings.invert ? -1 : 1) * this.touch.lookY * dt * 1.8, -0.55, 1.0);
+      }
       if (this.touch.jump) this.jumpBuffer = 0.2;
       this.input.jump = this.touch.jump || this.jumpBuffer > 0;
     }
@@ -377,6 +383,15 @@ class Game {
       this.controls.vehicle.up = Math.max(this.controls.vehicle.up, padJump ? 1 : 0);
       this.controls.vehicle.down = Math.max(this.controls.vehicle.down, padSprint ? 1 : 0);
     }
+  }
+
+  applyTouchLook(dt) {
+    if (this.settings.mode !== 'phone' || !this.player) return;
+    const lx = this.touch.lookX || 0, ly = this.touch.lookY || 0;
+    if (Math.abs(lx) < .03 && Math.abs(ly) < .03) return;
+    this.player.cameraYaw -= lx * dt * 2.6;
+    this.player.cameraPitch = clamp(this.player.cameraPitch + (this.settings.invert ? -1 : 1) * ly * dt * 1.9, -0.55, 1.0);
+    this.player.lookHold = 1.4;
   }
 
   toggleOverlay(name) {
@@ -435,6 +450,7 @@ class Game {
     if (this.crimeCooldown > 0) this.crimeCooldown -= dt;
 
     this.readInput(dt);
+    this.applyTouchLook(dt);
     this.updateTime(dt);
     this.updateWeather(dt);
     this.city.updateLighting(this.hour, this.weather, dt);

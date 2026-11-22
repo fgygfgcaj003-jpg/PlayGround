@@ -464,6 +464,9 @@ export function buildIslands(city, rng) {
   const islands = [
     { name: 'PALM ISLAND', x: 300, z: 700, rx: 182, rz: 132 },
     { name: 'CORAL ISLAND', x: -310, z: 748, rx: 156, rz: 114 },
+    { name: 'SUNSET ISLE', x: -780, z: 620, rx: 152, rz: 112 },
+    { name: 'FORT NOVA', x: 790, z: 900, rx: 184, rz: 142, military: true },
+    { name: 'SEAGLASS CAY', x: 40, z: 1120, rx: 172, rz: 122 },
   ];
   city.islands = islands;
   city.bridges = [];
@@ -488,6 +491,12 @@ export function buildIslands(city, rng) {
     { x: 300, z: 700, w: 330, d: 16 },
     { x: -310, z: 748, w: 16, d: 208 },
     { x: -310, z: 748, w: 268, d: 16 },
+    { x: -780, z: 620, w: 16, d: 200 },
+    { x: -780, z: 620, w: 290, d: 16 },
+    { x: 790, z: 900, w: 16, d: 270 },
+    { x: 790, z: 900, w: 320, d: 16 },
+    { x: 40, z: 1120, w: 16, d: 230 },
+    { x: 40, z: 1120, w: 300, d: 16 },
   ];
   city.islandRoads = roads;
   for (const r of roads) {
@@ -515,6 +524,24 @@ export function buildIslands(city, rng) {
   for (let x = -432; x <= -188; x += 12) {
     const dash = new THREE.Mesh(dashGeo, dashMat); dash.rotation.y = Math.PI / 2; dash.position.set(x, .17, 748); root.add(dash);
   }
+  for (let z = 532; z <= 708; z += 12) {
+    const dash = new THREE.Mesh(dashGeo, dashMat); dash.position.set(-780, .17, z); root.add(dash);
+  }
+  for (let x = -912; x <= -648; x += 12) {
+    const dash = new THREE.Mesh(dashGeo, dashMat); dash.rotation.y = Math.PI / 2; dash.position.set(x, .17, 620); root.add(dash);
+  }
+  for (let z = 778; z <= 1022; z += 12) {
+    const dash = new THREE.Mesh(dashGeo, dashMat); dash.position.set(790, .17, z); root.add(dash);
+  }
+  for (let x = 646; x <= 934; x += 12) {
+    const dash = new THREE.Mesh(dashGeo, dashMat); dash.rotation.y = Math.PI / 2; dash.position.set(x, .17, 900); root.add(dash);
+  }
+  for (let z = 1016; z <= 1224; z += 12) {
+    const dash = new THREE.Mesh(dashGeo, dashMat); dash.position.set(40, .17, z); root.add(dash);
+  }
+  for (let x = -94; x <= 174; x += 12) {
+    const dash = new THREE.Mesh(dashGeo, dashMat); dash.rotation.y = Math.PI / 2; dash.position.set(x, .17, 1120); root.add(dash);
+  }
 
   // cottages, palms and beach dressing
   const houseColors = [0xe8ddc6, 0xd7b98f, 0xc9d6cf, 0xe0c7a9, 0xb9c9bd];
@@ -522,16 +549,20 @@ export function buildIslands(city, rng) {
     [158, 638, .2], [398, 648, -.15], [236, 776, .35], [400, 778, -.4],
     [248, 604, .1], [356, 606, -.2], [244, 800, .25], [358, 802, -.3],
     [-390, 690, .15], [-232, 692, -.25], [-392, 806, .3], [-228, 810, -.15],
+    [-858, 566, .2], [-706, 566, -.18], [-850, 668, .35],
+    [-34, 1062, .2], [110, 1062, -.2], [-40, 1176, .3], [118, 1176, -.32],
   ];
   for (let i = 0; i < houses.length; i++) {
     addCottage(city, houses[i][0], houses[i][1], houses[i][2], houseColors[i % houseColors.length]);
   }
-  for (let i = 0; i < 26; i++) {
-    const d = islands[i % 2];
+  for (let i = 0; i < 64; i++) {
+    const d = islands[i % islands.length];
+    if (d.military) continue;
     const a = rng() * TAU;
     const x = d.x + Math.cos(a) * d.rx * (0.55 + rng() * .34);
     const z = d.z + Math.sin(a) * d.rz * (0.55 + rng() * .34);
-    if (Math.abs(x - 300) < 14 || Math.abs(z - 700) < 14 || Math.abs(x + 310) < 14 || Math.abs(z - 748) < 14) continue;
+    const nearRoad = roads.some(r => Math.abs(x - r.x) < r.w / 2 + 8 && Math.abs(z - r.z) < r.d / 2 + 8);
+    if (nearRoad) continue;
     if (Math.abs(x - 200) < 10 && z > 440 && z < 682) continue;
     addPalm(root, x, z, .8 + rng() * .45, rng);
   }
@@ -572,12 +603,284 @@ export function buildIslands(city, rng) {
   addRoadBridge(city, 300, 466, 300, 594, 18);
   addRoadBridge(city, 122, 700, -152, 741, 16);
   addRoadBridge(city, 200, 466, 200, 622, 9, true);
+  // New bay crossings: every outlying island is reachable from the mainland.
+  addRoadBridge(city, -780, 466, -780, 532, 17);
+  addRoadBridge(city, 790, 466, 790, 770, 18);
+  addRoadBridge(city, 40, 466, 40, 1010, 18);
+  addRoadBridge(city, -310, 790, 40, 1015, 16);
+  // Second railway bridge to Fort Nova plus the short island siding.
+  addRoadBridge(city, 700, 466, 700, 782, 9, true);
+  addRoadBridge(city, -820, 466, -820, 548, 9, true);
+  addMilitaryBase(city, rng);
+  addMilitaryRail(city);
 
   city.addPOI('park', 'Palm Island Beach', 300, 812, 34, { icon: 'park' });
   city.addPOI('shop', 'Palm Island Market', 388, 700, 16, { icon: 'shop' });
   city.addPOI('marina', 'Coral Island Marina', -272, 866, 22, { icon: 'marina' });
   city.addPOI('park', 'Coral Lighthouse', -360, 820, 18, { icon: 'park' });
   city.addPOI('hotel', 'Palm Island Resort', 208, 646, 20, { icon: 'hotel' });
+  city.addPOI('park', 'Sunset Isle Lookout', -780, 654, 26, { icon: 'park' });
+  city.addPOI('park', 'Seaglass Lagoon', 40, 1120, 34, { icon: 'park' });
+  city.addPOI('military', 'Fort Nova Military Base', 860, 900, 44, { icon: 'military' });
+  city.addPOI('shop', 'Seaglass Market', 112, 1120, 15, { icon: 'shop' });
+}
+
+function addMilitaryBase(city, rng) {
+  const root = city.root;
+  const olive = new THREE.MeshStandardMaterial({ color: 0x4b5638, roughness: .82, metalness: .18 });
+  const oliveDark = new THREE.MeshStandardMaterial({ color: 0x303923, roughness: .9 });
+  const sand = new THREE.MeshStandardMaterial({ color: 0x8c8568, roughness: 1 });
+  const fenceMat = new THREE.MeshStandardMaterial({ color: 0x5c6258, roughness: .55, metalness: .6 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x31505c, roughness: .1, metalness: .6 });
+  const cx = 872, cz = 892;
+
+  // hardstanding and parade ground
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(300, .14, 250), sand);
+  pad.position.set(cx, .2, cz); pad.receiveShadow = true; root.add(pad);
+  const parade = new THREE.Mesh(new THREE.BoxGeometry(150, .06, 92), new THREE.MeshStandardMaterial({ color: 0x6a6d60, roughness: .95 }));
+  parade.position.set(cx - 20, .3, cz + 26); root.add(parade);
+
+  const building = (x, z, w, d, h, color, ry = 0) => {
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), color);
+    body.position.set(x, .3 + h / 2, z); body.rotation.y = ry; body.castShadow = true; root.add(body);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 1.2, .34, d + 1.2), oliveDark);
+    roof.position.set(x, .3 + h + .1, z); roof.rotation.y = ry; root.add(roof);
+    city.colliders.push({ minX: x - w / 2 - 1, maxX: x + w / 2 + 1, minZ: z - d / 2 - 1, maxZ: z + d / 2 + 1, height: h + 1, type: 'building', mesh: body });
+    return body;
+  };
+
+  // headquarters + barracks
+  const hq = building(cx - 8, cz - 46, 34, 18, 8.5, olive);
+  for (let i = -2; i <= 2; i++) {
+    const win = new THREE.Mesh(new THREE.BoxGeometry(4.4, 2.1, .2), glass);
+    win.position.set(cx - 8 + i * 6, 5.2, cz - 46 + 9.1); root.add(win);
+  }
+  const flagPole = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 13, 8), city.metalMat);
+  flagPole.position.set(cx - 8, 6.9, cz - 58); root.add(flagPole);
+  const flag = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 2.1), new THREE.MeshStandardMaterial({ color: 0x6d7a45, side: THREE.DoubleSide, roughness: .9 }));
+  flag.position.set(cx - 6.2, 11.9, cz - 58); root.add(flag);
+  city.militaryFlag = flag;
+
+  building(cx + 62, cz - 40, 42, 14, 5.6, olive);
+  building(cx + 62, cz - 15, 42, 14, 5.6, olive);
+  building(cx + 66, cz + 52, 30, 22, 9, oliveDark);
+  // hangar
+  const hangar = new THREE.Mesh(new THREE.CylinderGeometry(13, 13, 32, 14, 1, false, 0, Math.PI), oliveDark);
+  hangar.rotation.z = Math.PI / 2; hangar.rotation.y = Math.PI / 2;
+  hangar.position.set(cx + 92, .35, cz + 4); root.add(hangar);
+  city.colliders.push({ minX: cx + 76, maxX: cx + 108, minZ: cz - 12, maxZ: cz + 20, height: 13, type: 'building', mesh: hangar });
+
+  // perimeter fence with a gate on the south side
+  const fenceRect = { x0: cx - 132, x1: cx + 122, z0: cz - 104, z1: cz + 104 };
+  const postGeo = new THREE.CylinderGeometry(.07, .09, 2.5, 5);
+  for (let x = fenceRect.x0; x <= fenceRect.x1; x += 8) {
+    for (const z of [fenceRect.z0, fenceRect.z1]) {
+      if (Math.abs(x - (cx + 18)) < 13 && z === fenceRect.z1) continue;
+      const p = new THREE.Mesh(postGeo, fenceMat); p.position.set(x, 1.55, z); root.add(p);
+    }
+    const top = new THREE.Mesh(new THREE.BoxGeometry(8.1, .06, .06), fenceMat);
+    top.position.set(x + 4, 2.7, fenceRect.z0); root.add(top);
+    const top2 = new THREE.Mesh(new THREE.BoxGeometry(8.1, .06, .06), fenceMat);
+    top2.position.set(x + 4, 2.7, fenceRect.z1); root.add(top2);
+  }
+  for (let z = fenceRect.z0; z <= fenceRect.z1; z += 8) {
+    for (const x of [fenceRect.x0, fenceRect.x1]) {
+      const p = new THREE.Mesh(postGeo, fenceMat); p.position.set(x, 1.55, z); root.add(p);
+    }
+    for (const x of [fenceRect.x0, fenceRect.x1]) {
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(.06, .06, 8.1), fenceMat);
+      bar.position.set(x, 2.7, z + 4); root.add(bar);
+    }
+  }
+  // gate + guard booths
+  for (const s of [-1, 1]) {
+    const booth = building(cx + 18 + s * 15, cz + 104, 8, 6, 3.2, olive);
+    const glass2 = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.3, .2), glass);
+    glass2.position.set(cx + 18 + s * 15, 2.2, cz + 107.1); root.add(glass2);
+    booth.castShadow = true;
+  }
+  const gateSign = new THREE.Mesh(new THREE.PlaneGeometry(12, 3.4), new THREE.MeshBasicMaterial({ map: signTexture('FORT NOVA', '#1d2617', '#d8e3bd', 'MILITARY RESERVATION'), transparent: true }));
+  gateSign.position.set(cx + 18, 6.3, cz + 105.2); root.add(gateSign);
+  for (const s of [-1, 1]) {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(.5, 6.4, .5), fenceMat);
+    p.position.set(cx + 18 + s * 9.5, 3.4, cz + 105); root.add(p);
+  }
+
+  // radar tower
+  const radarBase = new THREE.Mesh(new THREE.CylinderGeometry(2.4, 3.2, 16, 8), oliveDark);
+  radarBase.position.set(cx - 100, 8.3, cz - 76); root.add(radarBase);
+  const radarHead = new THREE.Group();
+  radarHead.position.set(cx - 100, 17, cz - 76);
+  const dish = new THREE.Mesh(new THREE.CylinderGeometry(5.2, .5, 1.2, 18, 1, true), new THREE.MeshStandardMaterial({ color: 0x9aa294, roughness: .48, metalness: .5, side: THREE.DoubleSide }));
+  dish.rotation.x = Math.PI / 2.5; radarHead.add(dish);
+  const dishArm = new THREE.Mesh(new THREE.BoxGeometry(.35, 4.6, .35), fenceMat);
+  dishArm.position.set(0, 2.2, 1.4); radarHead.add(dishArm);
+  root.add(radarHead);
+  city.radar = radarHead;
+
+  // watchtower
+  const tower = new THREE.Group(); tower.position.set(cx - 118, 0, cz + 84);
+  for (const s of [-1, 1]) for (const t of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(.35, 13, .35), fenceMat);
+    leg.position.set(s * 4.4, 6.5, t * 4.4); leg.rotation.z = -s * .04; tower.add(leg);
+  }
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(9, 4, 9), oliveDark); cab.position.y = 14.5; tower.add(cab);
+  const cabGlass = new THREE.Mesh(new THREE.BoxGeometry(8.4, 1.5, 8.4), glass); cabGlass.position.y = 15; tower.add(cabGlass);
+  const cabRoof = new THREE.Mesh(new THREE.ConeGeometry(7.4, 2.6, 4), oliveDark); cabRoof.position.y = 17.6; cabRoof.rotation.y = Math.PI / 4; tower.add(cabRoof);
+  root.add(tower);
+  city.colliders.push({ minX: cx - 124, maxX: cx - 112, minZ: cz + 78, maxZ: cz + 90, height: 19, type: 'building', mesh: cab });
+
+  // armour: three main battle tanks and two support trucks
+  const tank = (x, z, ry) => {
+    const g = new THREE.Group(); g.position.set(x, .25, z); g.rotation.y = ry;
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(7.2, 1.9, 11.6), olive); hull.position.y = 1.5; g.add(hull);
+    const trackMat = new THREE.MeshStandardMaterial({ color: 0x1e211c, roughness: 1 });
+    for (const s of [-1, 1]) {
+      const tr = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 11.8), trackMat); tr.position.set(s * 3.3, .95, 0); g.add(tr);
+      for (let w = -4.2; w <= 4.2; w += 1.4) {
+        const wh = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, 1.35, 10), trackMat);
+        wh.rotation.z = Math.PI / 2; wh.position.set(s * 3.3, .62, w); g.add(wh);
+      }
+    }
+    const turret = new THREE.Mesh(new THREE.CylinderGeometry(2.3, 2.8, 1.25, 8), oliveDark); turret.position.set(0, 2.9, -.8); g.add(turret);
+    const barrel = new THREE.Mesh(new THREE.CylinderGeometry(.16, .21, 8.2, 8), oliveDark);
+    barrel.rotation.x = Math.PI / 2; barrel.position.set(0, 3.1, 3.7); g.add(barrel);
+    const hatch = new THREE.Mesh(new THREE.BoxGeometry(.9, .18, .9), oliveDark); hatch.position.set(0, 3.55, -1.2); g.add(hatch);
+    root.add(g);
+    return g;
+  };
+  tank(cx + 20, cz + 16, -.2);
+  tank(cx + 4, cz + 16, .12);
+  tank(cx + 36, cz + 16, -.55);
+
+  for (const [x, z, ry] of [[cx + 42, cz - 70, .3], [cx + 54, cz - 70, .3]]) {
+    const truck = buildVehicleModel('truck', 0x4b5638, {});
+    truck.group.position.set(x, .02, z); truck.group.rotation.y = ry; root.add(truck.group);
+  }
+
+  // containers and fuel tanks
+  const containerColors = [0x4d5c38, 0x5b4a32, 0x39463c];
+  for (let i = 0; i < 12; i++) {
+    const c = new THREE.Mesh(new THREE.BoxGeometry(6, 2.6, 12), new THREE.MeshStandardMaterial({ color: containerColors[i % 3], roughness: .85 }));
+    c.position.set(cx + 72 + (i % 3) * 14, 1.5 + Math.floor(i / 6) * 2.7, cz + 72 + Math.floor(i / 3) % 2 * 13);
+    root.add(c);
+  }
+  for (let i = 0; i < 4; i++) {
+    const t = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 6, 16), new THREE.MeshStandardMaterial({ color: 0x6d7258, roughness: .6, metalness: .35 }));
+    t.position.set(cx - 70 + i * 11, 3.2, cz + 62); root.add(t);
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(4.1, 4.1, .35, 16), oliveDark); cap.position.set(cx - 70 + i * 11, 6.35, cz + 62); root.add(cap);
+  }
+
+  // parked helicopter on the pad
+  const heli = buildVehicleModel('helicopter', 0x46523a, {});
+  heli.group.position.set(cx - 60, .02, cz + 18); heli.group.rotation.y = Math.PI * .2; root.add(heli.group);
+  const helipad = new THREE.Mesh(new THREE.CylinderGeometry(16, 16, .1, 32), new THREE.MeshStandardMaterial({ color: 0x4f5350, roughness: .95 }));
+  helipad.position.set(cx - 60, .29, cz + 18); root.add(helipad);
+  const helipadMark = new THREE.Mesh(new THREE.RingGeometry(7, 9.5, 24), new THREE.MeshBasicMaterial({ color: 0xc8c6a6, side: THREE.DoubleSide }));
+  helipadMark.rotation.x = -Math.PI / 2; helipadMark.position.set(cx - 60, .35, cz + 18); root.add(helipadMark);
+
+  // warning beacons and lit sign at night
+  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xff5544, toneMapped: false });
+  for (const [x, z] of [[cx - 118, cz + 78], [cx + 100, cz + 104], [cx - 100, cz - 100]]) {
+    const b = new THREE.Mesh(new THREE.SphereGeometry(.28, 8, 6), beaconMat); b.position.set(x, 3, z); root.add(b);
+  }
+  city.militaryBase = { x: cx, z: cz };
+  city.addPOI('military', 'Fort Nova HQ', cx - 8, cz - 58, 26, { icon: 'military' });
+  city.addPOI('military', 'Fort Nova Barracks', cx + 64, cz - 28, 20, { icon: 'military' });
+}
+
+function addMilitaryRail(city) {
+  const root = city.root;
+  const x = 700, z0 = 378, z1 = 1012, len = z1 - z0;
+  const ballast = new THREE.Mesh(new THREE.BoxGeometry(6.4, .24, len), new THREE.MeshStandardMaterial({ color: 0x3d3a34, roughness: 1 }));
+  ballast.position.set(x, .08, (z0 + z1) / 2); root.add(ballast);
+  const steel = new THREE.MeshStandardMaterial({ color: 0xa8afb4, roughness: .26, metalness: .85 });
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(.14, .12, len), steel);
+    rail.position.set(x + side * .75, .3, (z0 + z1) / 2); root.add(rail);
+  }
+  const sleeperGeo = new THREE.BoxGeometry(3.1, .12, .26);
+  const sleepers = new THREE.InstancedMesh(sleeperGeo, city.woodMat, Math.floor(len / 1.8));
+  const tmp = new THREE.Object3D();
+  for (let i = 0; i < sleepers.count; i++) {
+    tmp.position.set(x, .19, z0 + i * 1.8 + 1); tmp.updateMatrix(); sleepers.setMatrixAt(i, tmp.matrix);
+  }
+  root.add(sleepers);
+  // platform and buffer stop at the military terminus
+  const platform = new THREE.Mesh(new THREE.BoxGeometry(8, .95, 34), city.concreteMat);
+  platform.position.set(x + 7, .55, 964); root.add(platform);
+  const canopy = new THREE.Mesh(new THREE.BoxGeometry(9, .18, 36), new THREE.MeshStandardMaterial({ color: 0x3b4434, roughness: .7 }));
+  canopy.position.set(x + 7, 4.3, 964); root.add(canopy);
+  for (const dz of [-15, 0, 15]) {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(.1, .13, 4.1, 6), city.metalMat);
+    post.position.set(x + 11, 2.2, 964 + dz); root.add(post);
+  }
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 2.2), new THREE.MeshBasicMaterial({ map: signTexture('FORT NOVA', '#1d2617', '#d8e3bd', 'MILITARY RAIL'), transparent: true }));
+  sign.position.set(x + 11.3, 3.1, 954); sign.rotation.y = -Math.PI / 2; root.add(sign);
+  const buffer = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.8, 1.2), new THREE.MeshStandardMaterial({ color: 0x6a2f28, roughness: .7 }));
+  buffer.position.set(x, 1.0, 1008); root.add(buffer);
+  city.addPOI('train', 'Fort Nova Military Rail', x + 7, 964, 12, { icon: 'transit', station: 0 });
+
+  const train = buildArmyTrain();
+  train.position.set(x, .42, 392);
+  train.rotation.y = 0;
+  root.add(train);
+  city.militaryRail = {
+    group: train, speed: 0, progress: 14, dir: 1, dwell: 5, length: len - 46,
+    update(dt) {
+      if (this.dwell > 0) {
+        this.dwell -= dt; this.speed = THREE.MathUtils.damp(this.speed, 0, 5, dt);
+      } else {
+        const left = this.dir > 0 ? this.length - this.progress : this.progress;
+        this.speed = THREE.MathUtils.damp(this.speed, left < 40 ? 3 : 15, 1.3, dt);
+        this.progress += this.speed * this.dir * dt;
+        if (this.progress >= this.length - 2) { this.progress = this.length - 2; this.dir = -1; this.dwell = 7; this.speed = 0; }
+        if (this.progress <= 2) { this.progress = 2; this.dir = 1; this.dwell = 7; this.speed = 0; }
+      }
+      this.group.position.z = 392 + this.progress;
+      this.group.rotation.y = this.dir > 0 ? 0 : Math.PI;
+      this.group.userData.wheels?.forEach(w => w.rotation.x += this.speed * dt / .5);
+    },
+  };
+}
+
+function buildArmyTrain() {
+  const g = new THREE.Group();
+  const olive = new THREE.MeshStandardMaterial({ color: 0x4e5737, roughness: .78, metalness: .2 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x262b20, roughness: .85 });
+  const glass = new THREE.MeshStandardMaterial({ color: 0x1b3034, roughness: .12, metalness: .55 });
+  const wheels = [];
+  const cars = [];
+  for (let i = 0; i < 3; i++) {
+    const car = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(2.9, 2.4, 12), olive); body.position.y = 1.85; body.castShadow = true; car.add(body);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(2.6, .22, 11.6), dark); roof.position.y = 3.16; car.add(roof);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(2.94, .24, 11.8), dark); strap.position.y = 1.18; car.add(strap);
+    for (const side of [-1, 1]) {
+      const win = new THREE.Mesh(new THREE.BoxGeometry(.05, .55, .9), glass); win.position.set(side * 1.47, 2.15, i === 0 ? 4.1 : 2.4); car.add(win);
+      const win2 = new THREE.Mesh(new THREE.BoxGeometry(.05, .55, .9), glass); win2.position.set(side * 1.47, 2.15, -2.6); car.add(win2);
+    }
+    if (i === 0) {
+      const nose = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.8, 1.4), olive); nose.position.set(0, 1.55, 6.4); car.add(nose);
+      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.3, .8, .1), glass); cab.position.set(0, 2.2, 7.12); car.add(cab);
+      for (const s of [-1, 1]) {
+        const lamp = new THREE.Mesh(new THREE.BoxGeometry(.36, .22, .1), new THREE.MeshBasicMaterial({ color: 0xfff1c4, toneMapped: false }));
+        lamp.position.set(s * 1.0, 1.35, 7.14); car.add(lamp);
+      }
+    }
+    for (const zz of [-4.2, 4.2]) {
+      const truck = new THREE.Mesh(new THREE.BoxGeometry(2.1, .42, 2.2), dark); truck.position.y = .55; truck.position.z = zz; car.add(truck);
+      for (const s of [-1, 1]) {
+        const wh = new THREE.Mesh(new THREE.CylinderGeometry(.48, .48, .25, 10), dark);
+        wh.rotation.z = Math.PI / 2; wh.position.set(s * 1.25, .45, zz); car.add(wh); wheels.push(wh);
+      }
+    }
+    car.position.z = -i * 13.4;
+    g.add(car); cars.push(car);
+  }
+  g.userData.wheels = wheels;
+  g.userData.cars = cars;
+  return g;
 }
 
 export function buildTransit(city, rng) {
@@ -779,12 +1082,33 @@ export function buildTransit(city, rng) {
     const mast = new THREE.Mesh(new THREE.CylinderGeometry(.14, .2, 8.6, 7), mastMat);
     mast.position.set(x, 4.3, track2Z - 4.1); root.add(mast);
     const arm = new THREE.Mesh(new THREE.BoxGeometry(.14, .14, 7.4), mastMat);
-    arm.position.set(x, 7.9, track2Z - .55); root.add(arm);
+    arm.position.set(x, 7.9, track2Z + 2.6); root.add(arm);
     for (const tz of [railZ, track2Z]) {
-      const wire = new THREE.Mesh(new THREE.BoxGeometry(.035, .035, 48), new THREE.MeshBasicMaterial({ color: 0x2b3034 }));
+      // The contact wire runs along the track (X axis), not across it.
+      const wire = new THREE.Mesh(new THREE.BoxGeometry(48, .035, .035), new THREE.MeshBasicMaterial({ color: 0x2b3034 }));
       wire.position.set(x, 7.62, tz); root.add(wire);
+      const hanger = new THREE.Mesh(new THREE.BoxGeometry(.03, .34, .03), new THREE.MeshBasicMaterial({ color: 0x2b3034 }));
+      hanger.position.set(x, 7.78, tz); root.add(hanger);
     }
   }
+  // crossover turnout so trains can be routed between the two tracks
+  const switchSteel = new THREE.MeshStandardMaterial({ color: 0xc0c6c9, roughness: .2, metalness: .9 });
+  const crossLen = 62;
+  const crossAng = Math.atan2(railZ - track2Z, crossLen);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(crossLen, .11, .14), switchSteel);
+    rail.position.set(-92, railY + .21, (railZ + track2Z) / 2 + side * .75);
+    rail.rotation.y = crossAng; root.add(rail);
+  }
+  const switchBase = new THREE.Mesh(new THREE.BoxGeometry(1.1, .35, 1.1), new THREE.MeshStandardMaterial({ color: 0x343b3f, roughness: .6, metalness: .5 }));
+  switchBase.position.set(-118, .45, track2Z + 2.6); root.add(switchBase);
+  const switchBlade = new THREE.Mesh(new THREE.BoxGeometry(.1, .16, 3.4), switchSteel);
+  switchBlade.position.set(-118, .62, track2Z + 2.6); switchBlade.rotation.y = .18; root.add(switchBlade);
+  const switchLens = new THREE.Mesh(new THREE.SphereGeometry(.16, 8, 6), new THREE.MeshBasicMaterial({ color: 0x33ff77, toneMapped: false }));
+  switchLens.position.set(-118, 1.5, track2Z + 2.6); root.add(switchLens);
+  const switchPost = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, 1.1, 6), mastMat);
+  switchPost.position.set(-118, .9, track2Z + 2.6); root.add(switchPost);
+  city.railSwitch = { blade: switchBlade, lens: switchLens, target: 0, angle: .18 };
   // lineside signals
   for (const x of [-340, -40, 260, 520]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 3.4, 6), mastMat);
@@ -841,75 +1165,37 @@ export function buildTransit(city, rng) {
     city.addPOI('train', `${s.name[0]}${s.name.slice(1).toLowerCase()} Rail`, s.x, -429, 13, { icon: 'transit', station: s === commuterStops[0] ? 0 : 2 });
   }
 
-  // commuter train
-  const commuter = buildCommuterTrain();
+  // Two commuter services share the double-track corridor. The express
+  // changes tracks at the crossover at the end of each lap.
+  const commuter = buildCommuterTrain('nova');
   commuter.position.set(-420, railY + .3, railZ);
+  commuter.rotation.y = Math.PI / 2;
   root.add(commuter);
+  const express = buildCommuterTrain('express');
+  express.position.set(320, railY + .3, track2Z);
+  express.rotation.y = -Math.PI / 2;
+  root.add(express);
   const railStations = [
     { x: -260, z: -430, name: 'Westbrook' },
     { x: 170, z: -430, name: 'Nova Central' },
     { x: 430, z: -430, name: 'Eastgate' },
   ];
-  city.rail = {
-    group: commuter, speed: 16, progress: 0, length: 1200, dwell: 0,
-    lineName: 'COMMUTER RAIL', routeName: 'Nova Central Line',
-    stations: railStations, auto: true, currentStation: -1, trainLength: 70, departCool: 0,
-    nearestStation() {
-      return this.stations[Math.max(0, this.currentStation)];
-    },
-    update(dt, elapsed) {
-      if (this.auto) {
-        if (this.dwell > 0) {
-          this.dwell -= dt;
-          this.speed = THREE.MathUtils.damp(this.speed, 0, 5, dt);
-          if (this.dwell <= 0) this.departCool = 4.5;
-        } else if (this.departCool > 0) {
-          this.departCool -= dt;
-          this.speed = THREE.MathUtils.damp(this.speed, 16, 1.4, dt);
-        } else {
-          const x = this.group.position.x;
-          let next = null, best = 1e9, idx = -1;
-          for (let i = 0; i < this.stations.length; i++) {
-            let d = this.stations[i].x - x;
-            if (d < -1) d += 1200;
-            if (d < best) { best = d; next = this.stations[i]; idx = i; }
-          }
-          if (next && best < 90) {
-            const target = THREE.MathUtils.clamp(best * .32, 0, 16);
-            this.speed = THREE.MathUtils.damp(this.speed, target, 1.8, dt);
-            if (best < 3.5 && Math.abs(this.speed) < 3) {
-              this.speed = 0; this.dwell = 6.5; this.currentStation = idx;
-              this.progress = (next.x + 600 + 1200) % 1200;
-              this.group.position.x = next.x;
-            }
-          } else {
-            this.speed = THREE.MathUtils.damp(this.speed, 16, .9, dt);
-          }
-          if (this.speed > .4) this.currentStation = -1;
-        }
-        this.progress = (this.progress + this.speed * dt + 1200) % 1200;
-        this.group.position.x = -600 + this.progress;
-      } else {
-        this.progress = (this.progress + this.speed * dt + 1200) % 1200;
-        this.group.position.x = -600 + this.progress;
-        if (this.speed > .4) this.currentStation = -1;
-        else {
-          let best = 1e9, idx = -1;
-          for (let i = 0; i < this.stations.length; i++) {
-            const d = Math.abs(this.stations[i].x - this.group.position.x);
-            if (d < best) { best = d; idx = i; }
-          }
-          this.currentStation = best < 8 ? idx : -1;
-        }
-      }
-      if (this.speed > .01) this.group.userData.wheels?.forEach(w => w.rotation.x += this.speed * dt / .55);
-    },
-  };
+  city.rail = makeCommuterService(city, commuter, {
+    stations: railStations, dir: 1, origin: -600, track: 1, z: railZ, z1: railZ, z2: track2Z,
+    progress: 180, speed: 16, maxSpeed: 16, name: 'COMMUTER RAIL',
+    route: 'Nova Central Line', express: false,
+  });
+  city.rail2 = makeCommuterService(city, express, {
+    stations: railStations, dir: -1, origin: 600, track: 2, z: track2Z, z1: railZ, z2: track2Z,
+    progress: 280, speed: 22, maxSpeed: 22, name: 'NOVA EXPRESS',
+    route: 'Bay Express · Track 2', express: true,
+  });
   if (city.rail) city.rail.group.userData.trainLength = 70;
 
   // freight service on the second track
   const freight = buildFreightTrain();
   freight.position.set(520, railY + .3, track2Z);
+  freight.rotation.y = -Math.PI / 2;
   root.add(freight);
   city.freightRail = {
     group: freight, speed: 12, progress: 520,
@@ -1027,6 +1313,177 @@ export function buildTransit(city, rng) {
   busDepot.rotation.x = -Math.PI / 2; busDepot.position.set(96, .17, 336); root.add(busDepot);
 }
 
+function makeCommuterService(city, group, opts) {
+  return {
+    group, city,
+    speed: opts.speed, progress: opts.progress, length: 1200, dwell: 0,
+    lineName: opts.name, routeName: opts.route,
+    stations: opts.stations, auto: true, currentStation: -1,
+    trainLength: 70, departCool: 0, dir: opts.dir, origin: opts.origin,
+    track: opts.track, z: opts.z, z1: opts.z1 ?? opts.z, z2: opts.z2 ?? opts.z - 5.2, maxSpeed: opts.maxSpeed,
+    express: !!opts.express, doorOpen: false,
+    blocked: false, blockTimer: 0, creeping: false, creepTimer: 0,
+    derailed: false, derailTimer: 0, hornTimer: 0,
+    nearestStation() { return this.stations[Math.max(0, this.currentStation)]; },
+    stationProgress(st) {
+      return ((this.dir > 0 ? st.x - this.origin : this.origin - st.x) + 2400) % 1200;
+    },
+    nextStationDistance() {
+      let best = 1e9;
+      for (const st of this.stations) {
+        let d = (this.stationProgress(st) - this.progress + 1200) % 1200;
+        if (d < 2) d = 1200;
+        best = Math.min(best, d);
+      }
+      return best;
+    },
+    update(dt, elapsed) { updateCommuterService(this, city, dt, elapsed); },
+  };
+}
+
+function railObstacleDistance(service, city) {
+  const game = city.game;
+  if (!game) return Infinity;
+  const x = service.group.position.x, z = service.z, dir = service.dir;
+  let best = Infinity;
+  const consider = (px, pz, len) => {
+    const along = (px - x) * dir;
+    if (along < -2 || along > 95) return;
+    if (Math.abs(pz - z) > 3.4) return;
+    const d = along - len * .5;
+    if (d < best) best = d;
+  };
+  const p = game.player;
+  if (p && !p.riding && !p.vehicle) consider(p.pos.x, p.pos.z, 1.1);
+  for (const v of game.vehicles?.vehicles || []) {
+    if (v.isPlayer && game.player?.vehicle === v) consider(v.pos.x, v.pos.z, v.cfg.len);
+    else if (v.mode !== 'parked' || Math.abs(v.pos.z - z) < 4) consider(v.pos.x, v.pos.z, v.cfg.len);
+  }
+  return best;
+}
+
+function derailCommuter(service, city) {
+  service.derailed = true;
+  service.derailTimer = 17;
+  service.speed = 0;
+  service.blockTimer = 0;
+  service.creepTimer = 0;
+  service.group.rotation.z = 0;
+  service.group.rotation.x = 0;
+  city.game?.audio?.trainHorn?.();
+  city.game?.effects?.sparksAt?.(service.group.position.x, 1.2, service.z, 18);
+  city.game?.notify?.('Train derailed after the track stayed blocked', 'bad');
+}
+
+function updateCommuterService(service, city, dt, elapsed) {
+  const s = service;
+  const sw = city.railSwitch;
+  if (s === city.rail2 && sw) {
+    const target = s.track === 2 ? .2 : -.2;
+    sw.angle = THREE.MathUtils.damp(sw.angle, target, 4.5, dt);
+    sw.blade.rotation.y = sw.angle;
+    sw.lens.material.color.setHex(s.track === 2 ? 0xffb020 : 0x33ff77);
+  }
+  if (s.derailed) {
+    s.derailTimer -= dt;
+    s.group.rotation.z = THREE.MathUtils.damp(s.group.rotation.z, .26, 2.5, dt);
+    s.group.rotation.x = THREE.MathUtils.damp(s.group.rotation.x, .1, 2.5, dt);
+    s.speed = 0;
+    s.doorOpen = false;
+    if (s.derailTimer <= 0) {
+      s.derailed = false;
+      s.group.rotation.z = 0;
+      s.group.rotation.x = 0;
+      s.blockTimer = 0;
+    }
+    animateTrainDoors(s, dt);
+    return;
+  }
+  s.group.position.z = s.z;
+  const obs = railObstacleDistance(s, city);
+  s.blocked = obs < 82;
+  if (s.dwell > 0) {
+    s.dwell -= dt;
+    s.speed = THREE.MathUtils.damp(s.speed, 0, 5, dt);
+    if (s.dwell <= 0) s.departCool = 4.5;
+    s.doorOpen = true;
+  } else if (!s.auto) {
+    s.doorOpen = false;
+    s.speed = clamp(s.speed, 0, 28);
+  } else if (s.express) {
+    s.doorOpen = false;
+    let target = s.maxSpeed;
+    if (s.blocked) {
+      target = Math.min(target, Math.max(0, obs * .34));
+      if (obs < 3.2) { target = 0; s.blockTimer += dt; }
+      if (s.blockTimer > 10) { s.creeping = true; target = 2.3; s.creepTimer += dt; }
+      if (s.creepTimer > 4 && obs < 1.7) { derailCommuter(s, city); return; }
+    }
+    const stopping = target < s.speed;
+    s.speed = THREE.MathUtils.damp(s.speed, target, stopping ? 2.5 : .8, dt);
+  } else if (s.departCool > 0) {
+    s.departCool -= dt;
+    s.doorOpen = false;
+    s.speed = THREE.MathUtils.damp(s.speed, s.maxSpeed, 1.4, dt);
+  } else {
+    const next = s.nextStationDistance();
+    let target = s.maxSpeed;
+    if (next < 95) target = Math.min(target, clamp(next * .34, 0, s.maxSpeed));
+    if (next < 2.3 && s.speed < 3) {
+      s.speed = 0;
+      s.dwell = 6.5;
+      let idx = 0, bestD = 1e9;
+      for (let i = 0; i < s.stations.length; i++) {
+        const d = Math.abs(((s.stationProgress(s.stations[i]) - s.progress + 1200) % 1200 + 600) % 1200 - 600);
+        if (d < bestD) { bestD = d; idx = i; }
+      }
+      s.currentStation = idx;
+      s.progress = s.stationProgress(s.stations[idx]) % 1200;
+      s.doorOpen = true;
+      s.group.position.x = s.origin + s.dir * s.progress;
+      animateTrainDoors(s, dt);
+      return;
+    }
+    if (s.blocked) {
+      target = Math.min(target, Math.max(0, obs * .34));
+      if (obs < 3.2) { target = 0; s.blockTimer += dt; }
+      if (s.blockTimer > 10) { s.creeping = true; target = 2.3; s.creepTimer += dt; }
+      if (s.creepTimer > 4 && obs < 1.7) { derailCommuter(s, city); return; }
+    }
+    const stopping = target < s.speed;
+    s.speed = THREE.MathUtils.damp(s.speed, target, stopping ? 2.2 : .9, dt);
+    if (s.speed > .35) s.currentStation = -1;
+    s.doorOpen = false;
+  }
+  if (!s.blocked) { s.blockTimer = 0; s.creeping = false; s.creepTimer = 0; }
+  if (s.blocked && s.speed < .55) {
+    s.hornTimer -= dt;
+    if (s.hornTimer <= 0) { s.hornTimer = 2.5; city.game?.audio?.trainHorn?.(); }
+  }
+  // advance
+  let p = s.progress + s.speed * dt;
+  if (p >= s.length) {
+    p -= s.length;
+    if (s.express) {
+      s.track = s.track === 1 ? 2 : 1;
+      s.z = s.track === 2 ? s.z2 : s.z1;
+    }
+    s.blockTimer = 0; s.creeping = false; s.creepTimer = 0;
+  }
+  s.progress = p;
+  s.group.position.x = s.origin + s.dir * s.progress;
+  s.group.rotation.y = s.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+  if (s.speed > .01) s.group.userData.wheels?.forEach(w => w.rotation.x += s.speed * dt / .55);
+  animateTrainDoors(s, dt);
+}
+
+function animateTrainDoors(service, dt) {
+  const open = service.doorOpen;
+  for (const d of service.group.userData.doors || []) {
+    d.scale.z = THREE.MathUtils.damp(d.scale.z, open ? .06 : 1, 5, dt);
+  }
+}
+
 function addCurvedBeam(root, cx, cz, radius, startAngle, endAngle, y, height, width, material) {
   const steps = 12;
   for (let i = 0; i < steps; i++) {
@@ -1107,62 +1564,124 @@ function buildMonorailTrain() {
   return g;
 }
 
-function buildCommuterTrain() {
+function buildCommuterTrain(livery = 'nova') {
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({ color: 0xa9b1b6, roughness: .5, metalness: .42 });
-  const darkMat = new THREE.MeshStandardMaterial({ color: 0x25333e, roughness: .3, metalness: .5 });
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0x14394d, roughness: .06, metalness: .75 });
-  const stripe = new THREE.MeshStandardMaterial({ color: 0xd7b23f, roughness: .45, metalness: .3 });
-  const seatMat = new THREE.MeshStandardMaterial({ color: 0x37566b, roughness: .88 });
+  const express = livery === 'express';
+  const bodyMat = new THREE.MeshStandardMaterial({ color: express ? 0x2c3c55 : 0xd4dade, roughness: .42, metalness: .48 });
+  const bandMat = new THREE.MeshStandardMaterial({ color: express ? 0x182131 : 0x313d46, roughness: .5, metalness: .45 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b2228, roughness: .55, metalness: .5 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x0d2733, roughness: .05, metalness: .8 });
+  const accent = new THREE.MeshStandardMaterial({ color: express ? 0xd9b45a : 0x27a9c1, roughness: .35, metalness: .45 });
+  const seatMat = new THREE.MeshStandardMaterial({ color: express ? 0x3a4358 : 0x365b6c, roughness: .9 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: express ? 0x2b3546 : 0x9aa5a9, roughness: .55, metalness: .4 });
   const wheels = [];
+  const doors = [];
   const cars = [];
-  const addCar = (z, len, loco) => {
-    const car = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(3.1, 3.25, len), bodyMat); body.position.y = 2.25; body.castShadow = true; car.add(body);
-    const skirt = new THREE.Mesh(new THREE.BoxGeometry(3.0, .55, len - .4), darkMat); skirt.position.y = .8; car.add(skirt);
-    const glass = new THREE.Mesh(new THREE.BoxGeometry(3.14, .92, len - 1.4), glassMat); glass.position.y = 2.9; car.add(glass);
-    for (let p = 0; p < 5; p++) {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(3.16, .98, .1), bodyMat);
-      pillar.position.set(0, 2.9, -len / 2 + 1.5 + p * (len - 3) / 4); car.add(pillar);
+  const carLen = 16, gap = 2.1;
+
+  const addBogie = (car, z) => {
+    const truck = new THREE.Mesh(new THREE.BoxGeometry(2.0, .5, 2.9), darkMat); truck.position.set(0, .62, z); car.add(truck);
+    for (const dz of [-.95, .95]) for (const side of [-1, 1]) {
+      const w = new THREE.Mesh(new THREE.CylinderGeometry(.52, .52, .27, 14), new THREE.MeshStandardMaterial({ color: 0x22262a, roughness: .9, metalness: .35 }));
+      w.rotation.z = Math.PI / 2; w.position.set(side * 1.29, .52, z + dz); car.add(w); wheels.push(w);
     }
-    const st = new THREE.Mesh(new THREE.BoxGeometry(3.14, .32, len - .2), stripe); st.position.y = 1.42; car.add(st);
-    const roof = new THREE.Mesh(new THREE.BoxGeometry(2.9, .22, len - .7), bodyMat); roof.position.y = 3.9; car.add(roof);
-    const ac = new THREE.Mesh(new THREE.BoxGeometry(1.7, .26, 2.8), darkMat); ac.position.set(0, 4.04, 0); car.add(ac);
-    // doors along both sides
-    for (const side of [-1, 1]) for (const zz of [-len * .24, len * .24]) {
-      const door = new THREE.Mesh(new THREE.BoxGeometry(.06, 2.05, 1.3), darkMat);
-      door.position.set(side * 1.56, 1.95, zz); car.add(door);
-      const doorGlass = new THREE.Mesh(new THREE.BoxGeometry(.04, 1.1, .95), glassMat);
-      doorGlass.position.set(side * 1.585, 2.2, zz); car.add(doorGlass);
-    }
-    for (const side of [-1, 1]) for (let s = 0; s < 4; s++) {
-      const bench = new THREE.Mesh(new THREE.BoxGeometry(.62, .36, 1.8), seatMat);
-      bench.position.set(side * .8, 1.55, -len * .28 + s * 2.4 + (loco ? 1 : 0)); car.add(bench);
-    }
-    if (loco) {
-      const nose = new THREE.Mesh(new THREE.BoxGeometry(2.9, 2.3, 2.2), bodyMat); nose.position.set(0, 2.0, len / 2 + 1.0); car.add(nose);
-      const noseSlope = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.4, 1.3), bodyMat); noseSlope.position.set(0, 1.55, len / 2 + 2.2); noseSlope.rotation.x = -.28; car.add(noseSlope);
-      const cab = new THREE.Mesh(new THREE.BoxGeometry(2.75, 1.0, .1), glassMat); cab.position.set(0, 2.65, len / 2 + 1.9); cab.rotation.x = -.15; car.add(cab);
-      for (const s of [-1, 1]) {
-        const light = new THREE.Mesh(new THREE.SphereGeometry(.2, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff2c0, toneMapped: false }));
-        light.position.set(s * .95, 1.4, len / 2 + 2.75); car.add(light);
-      }
-    }
-    for (const side of [-1, 1]) for (const zz of [-len / 2 + 2.2, len / 2 - 2.2]) {
-      const truck = new THREE.Mesh(new THREE.BoxGeometry(1.9, .5, 2.5), darkMat);
-      truck.position.set(0, .68, zz); car.add(truck);
-      for (const s of [-1, 1]) {
-        const w = new THREE.Mesh(new THREE.CylinderGeometry(.55, .55, .28, 12), new THREE.MeshStandardMaterial({ color: 0x22262a, roughness: .9 }));
-        w.rotation.z = Math.PI / 2; w.position.set(side * 1.28, .55, zz); car.add(w); wheels.push(w);
-      }
-    }
-    car.position.z = z; g.add(car); cars.push(car);
+    const spring = new THREE.Mesh(new THREE.BoxGeometry(1.5, .24, .5), new THREE.MeshStandardMaterial({ color: 0x5b6367, roughness: .5, metalness: .5 }));
+    spring.position.set(0, .9, z); car.add(spring);
   };
-  addCar(0, 15, true);
-  addCar(-18, 16, false); addCar(-36, 16, false); addCar(-54, 16, false);
+
+  const addCab = (car, front) => {
+    const sign = front ? 1 : -1;
+    const noseZ = sign * (carLen / 2 + .95);
+    const nose = new THREE.Mesh(new THREE.BoxGeometry(2.95, 2.35, 1.9), bodyMat);
+    nose.position.set(0, 1.95, noseZ); nose.castShadow = true; car.add(nose);
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(1.48, 16, 12), bodyMat);
+    cap.scale.set(1.0, .82, .8); cap.position.set(0, 2.05, sign * (carLen / 2 + 1.7)); car.add(cap);
+    const wind = new THREE.Mesh(new THREE.BoxGeometry(2.55, 1.24, .12), glassMat);
+    wind.position.set(0, 2.86, sign * (carLen / 2 + 1.62)); wind.rotation.x = sign * .34; car.add(wind);
+    const lowerWind = new THREE.Mesh(new THREE.BoxGeometry(2.2, .52, .1), glassMat);
+    lowerWind.position.set(0, 1.72, sign * (carLen / 2 + 1.91)); car.add(lowerWind);
+    const display = new THREE.Mesh(new THREE.BoxGeometry(1.55, .3, .06), new THREE.MeshBasicMaterial({ color: express ? 0xffd982 : 0x8ceaff, toneMapped: false }));
+    display.position.set(0, 3.55, sign * (carLen / 2 + 1.83)); car.add(display);
+    for (const s of [-1, 1]) {
+      const lamp = new THREE.Mesh(new THREE.CircleGeometry(.18, 12), new THREE.MeshBasicMaterial({ color: front ? 0xfff5d2 : 0xff3126, toneMapped: false }));
+      lamp.position.set(s * 1.02, 1.48, sign * (carLen / 2 + 2.02)); if (!front) lamp.rotation.y = Math.PI; car.add(lamp);
+    }
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(2.7, .42, 1.5), darkMat);
+    skirt.position.set(0, .78, sign * (carLen / 2 + 1.55)); car.add(skirt);
+    const coupler = new THREE.Mesh(new THREE.BoxGeometry(.42, .32, .55), darkMat);
+    coupler.position.set(0, .95, sign * (carLen / 2 + 2.12)); car.add(coupler);
+  };
+
+  const addCar = (z, idx) => {
+    const car = new THREE.Group();
+    // lower body, rounded roof and dark window band
+    const body = new THREE.Mesh(new THREE.BoxGeometry(3.08, 2.35, carLen), bodyMat);
+    body.position.y = 1.95; body.castShadow = true; car.add(body);
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(1.54, 1.54, carLen - .3, 18, 1), roofMat);
+    roof.rotation.x = Math.PI / 2; roof.position.y = 2.92; roof.castShadow = true; car.add(roof);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(3.13, 1.06, carLen - 1.25), glassMat);
+    band.position.y = 2.62; car.add(band);
+    for (const zz of [-5.6, -2.8, 0, 2.8, 5.6]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(3.16, 1.1, .09), bodyMat);
+      pillar.position.set(0, 2.62, zz); car.add(pillar);
+    }
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(3.0, .58, carLen - .5), darkMat);
+    skirt.position.y = .76; car.add(skirt);
+    const accentLine = new THREE.Mesh(new THREE.BoxGeometry(3.14, .24, carLen - .15), accent);
+    accentLine.position.y = 1.3; car.add(accentLine);
+    const waist = new THREE.Mesh(new THREE.BoxGeometry(3.1, .1, carLen - .15), bandMat);
+    waist.position.y = 2.06; car.add(waist);
+    // roof equipment
+    const ac = new THREE.Mesh(new THREE.BoxGeometry(1.55, .26, 3.2), bandMat); ac.position.set(0, 4.42, -1.2); car.add(ac);
+    const vent = new THREE.Mesh(new THREE.BoxGeometry(1.2, .16, 1.6), darkMat); vent.position.set(0, 4.4, 3.4); car.add(vent);
+    // sliding doors: each leaf is its own instanced panel so it can open
+    for (const side of [-1, 1]) for (const zz of [-carLen * .26, carLen * .26]) {
+      const door = new THREE.Group();
+      const leaf = new THREE.Mesh(new THREE.BoxGeometry(.06, 2.02, 1.2), bandMat); door.add(leaf);
+      const glass = new THREE.Mesh(new THREE.BoxGeometry(.04, 1.22, .92), glassMat); glass.position.x = side * .025; door.add(glass);
+      const handle = new THREE.Mesh(new THREE.BoxGeometry(.05, .16, .06), accent); handle.position.set(side * .06, 0, .48); door.add(handle);
+      door.position.set(side * 1.56, 1.98, zz); car.add(door); doors.push(door);
+    }
+    // visible interior
+    for (const side of [-1, 1]) for (let s = 0; s < 4; s++) {
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(.58, .34, 1.7), seatMat);
+      bench.position.set(side * .82, 1.28, -carLen * .28 + s * 2.45); car.add(bench);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(.1, .55, 1.7), seatMat);
+      back.position.set(side * 1.1, 1.55, -carLen * .28 + s * 2.45); car.add(back);
+    }
+    const grabRail = new THREE.Mesh(new THREE.BoxGeometry(.05, .05, carLen - 3), new THREE.MeshStandardMaterial({ color: 0xd5b445, roughness: .35, metalness: .7 }));
+    grabRail.position.set(0, 3.28, 0); car.add(grabRail);
+    addBogie(car, carLen / 2 - 2.7);
+    addBogie(car, -carLen / 2 + 2.7);
+    if (idx === 0) addCab(car, true);
+    if (idx === 3) addCab(car, false);
+    car.position.z = z;
+    g.add(car); cars.push(car);
+  };
+
+  addCar(0, 0); addCar(-(carLen + gap), 1); addCar(-2 * (carLen + gap), 2); addCar(-3 * (carLen + gap), 3);
+
+  // pantograph on the second car
+  const panto = new THREE.Group();
+  panto.position.set(0, 4.45, -(carLen + gap) + 2.2);
+  const ins1 = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, .26, 8), darkMat); ins1.position.set(-.7, .12, 0); panto.add(ins1);
+  const ins2 = ins1.clone(); ins2.position.x = .7; panto.add(ins2);
+  const lowerArm = new THREE.Mesh(new THREE.BoxGeometry(.09, 1.8, .09), darkMat); lowerArm.position.set(0, .9, .4); lowerArm.rotation.x = -.5; panto.add(lowerArm);
+  const upperArm = new THREE.Mesh(new THREE.BoxGeometry(.07, 1.5, .07), darkMat); upperArm.position.set(0, 2.1, 1.0); upperArm.rotation.x = .6; panto.add(upperArm);
+  const collector = new THREE.Mesh(new THREE.BoxGeometry(1.5, .09, .16), new THREE.MeshStandardMaterial({ color: 0x6a7074, roughness: .4, metalness: .7 })); collector.position.set(0, 2.75, 1.42); panto.add(collector);
+  g.add(panto);
+
+  // inter-car gangways
+  for (let i = 1; i < 4; i++) {
+    const bellows = new THREE.Mesh(new THREE.BoxGeometry(2.35, 2.3, .85), bandMat);
+    bellows.position.set(0, 2.05, -(carLen + gap) * i + (carLen + gap) / 2); g.add(bellows);
+  }
+
   g.userData.wheels = wheels;
+  g.userData.doors = doors;
   g.userData.cars = cars;
-  g.userData.trainLength = 70;
+  g.userData.pantograph = panto;
+  g.userData.trainLength = 3 * (carLen + gap) + carLen;
   return g;
 }
 

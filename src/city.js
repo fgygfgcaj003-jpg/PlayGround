@@ -57,7 +57,9 @@ export class City {
     this.water = null;
     this.monorail = null;
     this.rail = null;
+    this.rail2 = null;
     this.islandRail = null;
+    this.militaryRail = null;
     this.freightRail = null;
     this.airTraffic = [];
     this.islands = [];
@@ -106,8 +108,12 @@ export class City {
     markDynamic(this.fireflyPoints);
     if (this.monorail) markDynamic(this.monorail.group);
     if (this.rail) markDynamic(this.rail.group);
+    if (this.rail2) markDynamic(this.rail2.group);
     if (this.islandRail) markDynamic(this.islandRail.group);
+    if (this.militaryRail) markDynamic(this.militaryRail.group);
     if (this.freightRail) markDynamic(this.freightRail.group);
+    if (this.radar) markDynamic(this.radar);
+    if (this.militaryFlag) markDynamic(this.militaryFlag);
     if (this.flyingPlane) markDynamic(this.flyingPlane.group);
     for (const a of this.airTraffic) markDynamic(a.group);
     if (this.lighthouse) markDynamic(this.lighthouse.group);
@@ -946,8 +952,12 @@ export class City {
     }
     if (this.monorail) this.monorail.update(dt, elapsed);
     if (this.rail) this.rail.update(dt, elapsed);
+    if (this.rail2) this.rail2.update(dt, elapsed);
     if (this.islandRail) this.islandRail.update(dt, elapsed);
+    if (this.militaryRail) this.militaryRail.update(dt, elapsed);
     if (this.freightRail) this.freightRail.update(dt, elapsed);
+    if (this.radar) this.radar.rotation.y += dt * .35;
+    if (this.militaryFlag) this.militaryFlag.rotation.y = Math.sin(elapsed * 1.7) * .15;
     for (const a of this.airTraffic) a.update(dt, elapsed);
     if (this.lighthouse) {
       const sweep = Math.sin(elapsed * .8) * .5 + .5;

@@ -188,6 +188,31 @@ export class UI {
     stick.addEventListener('pointercancel', resetStick);
     stick.addEventListener('lostpointercapture', resetStick);
 
+    const lookStick = $('look-stick');
+    const lookThumb = $('look-stick-thumb');
+    if (lookStick) {
+      const updateLookStick = (e) => {
+        const rect = lookStick.getBoundingClientRect();
+        let x = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
+        let y = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
+        const mag = Math.hypot(x, y);
+        if (mag > 1) { x /= mag; y /= mag; }
+        this.game.touch.lookX = x;
+        this.game.touch.lookY = y;
+        if (lookThumb) lookThumb.style.transform = `translate(${x * 28}px, ${y * 28}px)`;
+      };
+      const resetLookStick = () => {
+        this.game.touch.lookX = 0;
+        this.game.touch.lookY = 0;
+        if (lookThumb) lookThumb.style.transform = '';
+      };
+      lookStick.addEventListener('pointerdown', (e) => { lookStick.setPointerCapture?.(e.pointerId); updateLookStick(e); });
+      lookStick.addEventListener('pointermove', (e) => { if (e.buttons || e.pointerType === 'touch') updateLookStick(e); });
+      lookStick.addEventListener('pointerup', resetLookStick);
+      lookStick.addEventListener('pointercancel', resetLookStick);
+      lookStick.addEventListener('lostpointercapture', resetLookStick);
+    }
+
     document.querySelectorAll('[data-touch-action]').forEach(btn => {
       const action = btn.dataset.touchAction;
       const press = (e) => {
