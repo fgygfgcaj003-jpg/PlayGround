@@ -971,7 +971,7 @@ export function buildTransit(city, rng) {
     s.platformY = Y;
   }
   // monorail train geometry
-  const train = buildMonorailTrain();
+  const train = buildMonorailTrain(true);
   train.position.set(0, Y + 1.1, -R);
   guide.add(train);
   root.add(guide);
@@ -1316,7 +1316,7 @@ export function buildTransit(city, rng) {
   }
   city.addPOI('train', 'Harbor Island Line', islTrackX + 5, islZ0 + 6, 13, { icon: 'transit', line: 'island', station: 0 });
   city.addPOI('train', 'Palm Island Station', islTrackX + 5, islZ0 + islLen - 6, 13, { icon: 'transit', line: 'island', station: 1 });
-  const tram = buildTramTrain(rng() > .45 ? 'island' : 'heritage');
+  const tram = buildTramTrain(rng() > .45 ? 'island' : 'heritage', true);
   tram.position.set(islTrackX, .42, islZ0 + 2);
   root.add(tram);
   const islandStations = [
@@ -1735,7 +1735,7 @@ function loopPoints(progress, perimeter, R) {
   return { x: -R, z: R - p, angle: -Math.PI / 2 };
 }
 
-function buildMonorailTrain() {
+function buildMonorailTrain(locoOnly = false) {
   const g = new THREE.Group();
   const shell = new THREE.MeshStandardMaterial({ color: 0xeef4f7, roughness: .26, metalness: .38 });
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x173a4e, roughness: .07, metalness: .72 });
@@ -1743,7 +1743,7 @@ function buildMonorailTrain() {
   const dark = new THREE.MeshStandardMaterial({ color: 0x27343c, roughness: .6, metalness: .45 });
   const seat = new THREE.MeshStandardMaterial({ color: 0x2f6f88, roughness: .85 });
   const cars = [], doors = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < (locoOnly ? 1 : 4); i++) {
     const car = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(2.9, 2.15, 9.7), shell); body.position.y = 1.45; body.castShadow = true; car.add(body);
     const skirt = new THREE.Mesh(new THREE.BoxGeometry(2.8, .55, 9.4), dark); skirt.position.y = .52; car.add(skirt);
@@ -1997,7 +1997,7 @@ function buildFreightTrain(variant = 'boxcar', locoOnly = false) {
   return g;
 }
 
-function buildTramTrain(variant = 'island') {
+function buildTramTrain(variant = 'island', locoOnly = false) {
   const g = new THREE.Group();
   const heritage = variant === 'heritage';
   const shell = new THREE.MeshStandardMaterial({ color: heritage ? 0x7a2f2c : 0xe7edf0, roughness: .34, metalness: .35 });
@@ -2007,7 +2007,7 @@ function buildTramTrain(variant = 'island') {
   const dark = new THREE.MeshStandardMaterial({ color: 0x262f36, roughness: .7 });
   const wheels = [];
   const cars = [];
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < (locoOnly ? 1 : 2); i++) {
     const car = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(2.7, 2.0, 9.4), shell); body.position.y = 1.45; car.add(body);
     const skirt = new THREE.Mesh(new THREE.BoxGeometry(2.6, .4, 9.1), trim); skirt.position.y = .55; car.add(skirt);
@@ -2064,7 +2064,7 @@ function buildTramTrain(variant = 'island') {
   g.userData.variant = variant;
   g.userData.wheels = wheels;
   g.userData.cars = cars;
-  g.userData.trainLength = 21;
+  g.userData.trainLength = locoOnly ? 9.4 : 21;
   return g;
 }
 

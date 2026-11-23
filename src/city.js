@@ -438,6 +438,11 @@ export class City {
     const roof = opts.roofMat || this.roofMat;
     const geo = this.facadeGeometry(w, h, d);
     const mesh = new THREE.Mesh(geo, [mat, mat, roof, roof, mat, mat]);
+    // Railway corridor stays clear of buildings.
+    const railTracks = [-320, -325.2, -331.6];
+    if (railTracks.some(tz => Math.abs(z - tz) < d / 2 + 2.6)) {
+      return { mesh, collider: { minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, height: h, type: 'building', mesh } };
+    }
     mesh.position.set(x, h / 2 + 0.15 + (opts.base || 0), z);
     mesh.castShadow = h > 14;
     mesh.receiveShadow = true;
