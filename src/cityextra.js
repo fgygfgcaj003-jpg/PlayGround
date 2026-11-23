@@ -827,6 +827,7 @@ function addMilitaryRail(city) {
   root.add(train);
   city.militaryRail = {
     group: train, speed: 0, progress: 14, dir: 1, dwell: 5, length: len - 46,
+    trainLength: train.userData.trainLength || 52, hitCooldown: 0,
     update(dt) {
       if (this.dwell > 0) {
         this.dwell -= dt; this.speed = THREE.MathUtils.damp(this.speed, 0, 5, dt);
@@ -840,6 +841,7 @@ function addMilitaryRail(city) {
       this.group.position.z = 392 + this.progress;
       this.group.rotation.y = this.dir > 0 ? 0 : Math.PI;
       this.group.userData.wheels?.forEach(w => w.rotation.x += this.speed * dt / .5);
+      trainImpacts(this, city, dt, 'z');
     },
   };
 }
@@ -880,6 +882,7 @@ function buildArmyTrain() {
   }
   g.userData.wheels = wheels;
   g.userData.cars = cars;
+  g.userData.trainLength = 2 * 13.4 + 12;
   return g;
 }
 
@@ -1057,7 +1060,7 @@ export function buildTransit(city, rng) {
   city.monorail = monorail;
 
   // --- ground railway (double track, freight + commuter) ---
-  const railY = .1, railZ = -446, track2Z = railZ - 5.2;
+  const railY = .1, railZ = -446, track2Z = railZ - 5.2, track3Z = track2Z - 6.4;
   const railSteel = new THREE.MeshStandardMaterial({ color: 0xa8afb4, roughness: .26, metalness: .85 });
   const ballast = new THREE.Mesh(new THREE.BoxGeometry(1200, .28, 15), new THREE.MeshStandardMaterial({ color: 0x3d3a34, roughness: 1 }));
   ballast.position.set(0, .05, (railZ + track2Z) / 2); root.add(ballast);
@@ -1076,6 +1079,21 @@ export function buildTransit(city, rng) {
       base.position.set(0, railY + .13, tz + side * .75); root.add(base);
     }
   }
+  // Third track: the freight siding. It keeps freight clear of the two
+  // passenger tracks unless the player routes it through the junction.
+  const ballast3 = new THREE.Mesh(new THREE.BoxGeometry(1200, .22, 7.4), new THREE.MeshStandardMaterial({ color: 0x3b3832, roughness: 1 }));
+  ballast3.position.set(0, .03, track3Z); root.add(ballast3);
+  const sleepers3 = new THREE.InstancedMesh(new THREE.BoxGeometry(.28, .12, 5.4), city.woodMat, 300);
+  for (let i = 0; i < sleepers3.count; i++) {
+    tmp.position.set(-600 + i * 4, railY + .11, track3Z); tmp.rotation.set(0, Math.PI / 2, 0); tmp.updateMatrix(); sleepers3.setMatrixAt(i, tmp.matrix);
+  }
+  root.add(sleepers3);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(1200, .13, .16), railSteel);
+    rail.position.set(0, railY + .21, track3Z + side * .75); root.add(rail);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1200, .05, .34), new THREE.MeshStandardMaterial({ color: 0x5a5f63, roughness: .6, metalness: .5 }));
+    base.position.set(0, railY + .13, track3Z + side * .75); root.add(base);
+  }
   // catenary masts and overhead wire
   const mastMat = new THREE.MeshStandardMaterial({ color: 0x59636c, roughness: .5, metalness: .6 });
   for (let x = -600; x <= 600; x += 48) {
@@ -1083,7 +1101,7 @@ export function buildTransit(city, rng) {
     mast.position.set(x, 4.3, track2Z - 4.1); root.add(mast);
     const arm = new THREE.Mesh(new THREE.BoxGeometry(.14, .14, 7.4), mastMat);
     arm.position.set(x, 7.9, track2Z + 2.6); root.add(arm);
-    for (const tz of [railZ, track2Z]) {
+    for (const tz of [railZ, track2Z, track3Z]) {
       // The contact wire runs along the track (X axis), not across it.
       const wire = new THREE.Mesh(new THREE.BoxGeometry(48, .035, .035), new THREE.MeshBasicMaterial({ color: 0x2b3034 }));
       wire.position.set(x, 7.62, tz); root.add(wire);
@@ -1109,6 +1127,40 @@ export function buildTransit(city, rng) {
   const switchPost = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, 1.1, 6), mastMat);
   switchPost.position.set(-118, .9, track2Z + 2.6); root.add(switchPost);
   city.railSwitch = { blade: switchBlade, lens: switchLens, target: 0, angle: .18 };
+  // Player-controlled siding turnout between track 2 and the freight siding.
+  const junction = new THREE.Group();
+  const juncX = -420;
+  const juncLen = 46;
+  const juncAng = Math.atan2(track3Z - track2Z, juncLen);
+  for (const side of [-1, 1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(juncLen, .11, .14), switchSteel);
+    rail.position.set(juncX, railY + .21, (track2Z + track3Z) / 2 + side * .75);
+    rail.rotation.y = juncAng; junction.add(rail);
+  }
+  const juncBase = new THREE.Mesh(new THREE.BoxGeometry(1.3, .38, 1.3), new THREE.MeshStandardMaterial({ color: 0x343b3f, roughness: .6, metalness: .5 }));
+  juncBase.position.set(juncX + 26, .45, track3Z + 2.8); junction.add(juncBase);
+  const juncBlade = new THREE.Mesh(new THREE.BoxGeometry(.12, .18, 3.8), switchSteel);
+  juncBlade.position.set(juncX + 26, .62, track3Z + 2.8); juncBlade.rotation.y = -.2; junction.add(juncBlade);
+  const juncLens = new THREE.Mesh(new THREE.SphereGeometry(.17, 8, 6), new THREE.MeshBasicMaterial({ color: 0x33ff77, toneMapped: false }));
+  juncLens.position.set(juncX + 26, 1.55, track3Z + 2.8); junction.add(juncLens);
+  const juncPost = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, 1.15, 6), mastMat);
+  juncPost.position.set(juncX + 26, .95, track3Z + 2.8); junction.add(juncPost);
+  const juncSign = new THREE.Mesh(new THREE.PlaneGeometry(4.8, 1.5), new THREE.MeshBasicMaterial({ map: signTexture('NOVA JUNCTION', '#1a2418', '#d9f0b8', 'SIDING POINTS'), transparent: true }));
+  juncSign.position.set(juncX + 26, 2.7, track3Z + 2.9); junction.add(juncSign);
+  root.add(junction);
+  city.railJunction = {
+    group: junction, blade: juncBlade, lens: juncLens,
+    x: juncX, z: (track2Z + track3Z) / 2, routeMain: false, manual: false,
+    toggle() {
+      this.routeMain = !this.routeMain;
+      this.manual = true;
+      const target = this.routeMain ? .22 : -.22;
+      this.blade.rotation.y = target;
+      this.lens.material.color.setHex(this.routeMain ? 0xffb020 : 0x33ff77);
+      return this.routeMain;
+    },
+  };
+  city.addPOI('railswitch', 'Nova Rail Junction', juncX + 26, track3Z + 7, 12, { icon: 'transit' });
   // lineside signals
   for (const x of [-340, -40, 260, 520]) {
     const post = new THREE.Mesh(new THREE.CylinderGeometry(.08, .11, 3.4, 6), mastMat);
@@ -1165,9 +1217,11 @@ export function buildTransit(city, rng) {
     city.addPOI('train', `${s.name[0]}${s.name.slice(1).toLowerCase()} Rail`, s.x, -429, 13, { icon: 'transit', station: s === commuterStops[0] ? 0 : 2 });
   }
 
-  // Two commuter services share the double-track corridor. The express
-  // changes tracks at the crossover at the end of each lap.
-  const commuter = buildCommuterTrain('nova');
+  // Two commuter services share the double-track corridor. Each keeps its
+  // own running line; the express only changes tracks through dispatch.
+  const commuterLiveries = ['nova', 'coast', 'metro', 'heritage'];
+  const commuterLivery = commuterLiveries[Math.floor(rng() * commuterLiveries.length) % commuterLiveries.length];
+  const commuter = buildCommuterTrain(commuterLivery);
   commuter.position.set(-420, railY + .3, railZ);
   commuter.rotation.y = Math.PI / 2;
   root.add(commuter);
@@ -1191,18 +1245,46 @@ export function buildTransit(city, rng) {
     route: 'Bay Express · Track 2', express: true,
   });
   if (city.rail) city.rail.group.userData.trainLength = 70;
+  if (city.rail2) city.rail2.group.userData.trainLength = 70;
 
-  // freight service on the second track
-  const freight = buildFreightTrain();
-  freight.position.set(520, railY + .3, track2Z);
+  // freight service on the dedicated siding
+  const freight = buildFreightTrain(rng() > .5 ? 'tanker' : 'boxcar');
+  freight.position.set(520, railY + .3, track3Z);
   freight.rotation.y = -Math.PI / 2;
   root.add(freight);
   city.freightRail = {
-    group: freight, speed: 12, progress: 520,
+    group: freight, speed: 12, progress: 520, dir: -1, track: 3, z: track3Z,
+    z1: track3Z, z2: track2Z, trainLength: freight.userData.trainLength || 80, hitCooldown: 0,
+    collisionCool: 0, derailed: false, derailTimer: 0,
     update(dt) {
+      this.hitCooldown = Math.max(0, (this.hitCooldown || 0) - dt);
+      this.collisionCool = Math.max(0, (this.collisionCool || 0) - dt);
+      const p = city.railJunction;
+      if (p) {
+        p.blade.rotation.y = THREE.MathUtils.damp(p.blade.rotation.y, p.routeMain ? .22 : -.22, 4, dt);
+      }
+
+      // The turnout is fixed at X = -420. Only change tracks inside a short
+      // approach window; never interpolate z over the length of the line.
       this.progress = (this.progress + this.speed * dt) % 1200;
-      this.group.position.x = 600 - this.progress;
+      const x = 600 - this.progress;
+      const junctionX = p?.x ?? -420;
+      const routeMain = !!p?.routeMain;
+      let targetZ = routeMain ? this.z2 : this.z1;
+      const switchWindow = 38;
+      if (this.dir < 0 && routeMain) {
+        if (x > junctionX - switchWindow && x <= junctionX + switchWindow) {
+          const blend = THREE.MathUtils.clamp((x - (junctionX - switchWindow)) / (switchWindow * 2), 0, 1);
+          targetZ = THREE.MathUtils.lerp(this.z1, this.z2, blend);
+        } else if (x > junctionX + switchWindow) targetZ = this.z1;
+      } else if (this.dir < 0 && !routeMain) {
+        targetZ = this.z1;
+      }
+      this.z = THREE.MathUtils.damp(this.z, targetZ, 5.5, dt);
+      this.group.position.x = x;
+      this.group.position.z = this.z;
       this.group.userData.wheels?.forEach(w => w.rotation.x += dt * 7);
+      trainImpacts(this, city, dt, 'x');
     },
   };
 
@@ -1234,7 +1316,7 @@ export function buildTransit(city, rng) {
   }
   city.addPOI('train', 'Harbor Island Line', islTrackX + 5, islZ0 + 6, 13, { icon: 'transit', line: 'island', station: 0 });
   city.addPOI('train', 'Palm Island Station', islTrackX + 5, islZ0 + islLen - 6, 13, { icon: 'transit', line: 'island', station: 1 });
-  const tram = buildTramTrain();
+  const tram = buildTramTrain(rng() > .45 ? 'island' : 'heritage');
   tram.position.set(islTrackX, .42, islZ0 + 2);
   root.add(tram);
   const islandStations = [
@@ -1272,6 +1354,7 @@ export function buildTransit(city, rng) {
       this.group.position.z = islZ0 + this.progress;
       this.group.rotation.y = this.dir > 0 ? 0 : Math.PI;
       this.group.userData.wheels?.forEach(w => w.rotation.x += this.speed * dt / .4);
+      trainImpacts(this, city, dt, 'z');
     },
   };
 
@@ -1321,7 +1404,7 @@ function makeCommuterService(city, group, opts) {
     stations: opts.stations, auto: true, currentStation: -1,
     trainLength: 70, departCool: 0, dir: opts.dir, origin: opts.origin,
     track: opts.track, z: opts.z, z1: opts.z1 ?? opts.z, z2: opts.z2 ?? opts.z - 5.2, maxSpeed: opts.maxSpeed,
-    express: !!opts.express, doorOpen: false,
+    express: !!opts.express, doorOpen: false, hitCooldown: 0, collisionCool: 0,
     blocked: false, blockTimer: 0, creeping: false, creepTimer: 0,
     derailed: false, derailTimer: 0, hornTimer: 0,
     nearestStation() { return this.stations[Math.max(0, this.currentStation)]; },
@@ -1375,6 +1458,106 @@ function derailCommuter(service, city) {
   city.game?.notify?.('Train derailed after the track stayed blocked', 'bad');
 }
 
+/* Physical train contact. Trains brake for obstacles, but a late arrival on
+   the tracks is still hit. Works on both X-running and Z-running lines. */
+function trainImpacts(service, city, dt, axis = 'x') {
+  const game = city.game;
+  const player = game?.player;
+  if (!game || !player) return;
+  service.hitCooldown = Math.max(0, (service.hitCooldown || 0) - dt);
+  const speed = Math.abs(service.speed || 0);
+  if (speed < .9 || service.hitCooldown > 0 || service.derailed) return;
+  const len = service.trainLength || service.group?.userData?.trainLength || 70;
+  const c = service.group.position;
+  const half = len * .5;
+  const dir = service.dir || 1;
+  // Train meshes trail behind the group origin, so the collision box is
+  // offset rearward along the running line.
+  const cx = axis === 'x' ? c.x - dir * half : c.x;
+  const cz = axis === 'z' ? c.z - dir * half : c.z;
+  const inBox = (x, z, pad = 0) => axis === 'x'
+    ? Math.abs(z - cz) < 3.1 + pad && Math.abs(x - cx) < half + pad
+    : Math.abs(x - cx) < 3.1 + pad && Math.abs(z - cz) < half + pad;
+  const sideOf = (v, center) => v < center ? -1 : 1;
+  let hit = false;
+
+  // player on foot
+  if (!player.riding && !player.vehicle && inBox(player.pos.x, player.pos.z, .5)) {
+    const ox = player.pos.x, oz = player.pos.z;
+    let nx = ox, nz = oz;
+    if (axis === 'x') nz = cz + sideOf(oz, cz) * 8;
+    else nx = cx + sideOf(ox, cx) * 8;
+    player.setPosition(nx, nz, player.groundY || .18);
+    player.velocity.set((nx - ox) * 3, 0, (nz - oz) * 3);
+    game.damagePlayer?.(38 + speed * 1.5, 'train');
+    game.camShake = Math.max(game.camShake || 0, 1);
+    game.notify?.('You were struck by the train — stay off the tracks!', 'bad');
+    game.effects?.sparksAt(ox, 1, oz, 22);
+    hit = true;
+  }
+
+  // any road vehicle, including the player's
+  const pv = player.vehicle;
+  for (const v of [...(game.vehicles?.vehicles || [])]) {
+    if (v.isAir && v.pos.y > 4) continue;
+    if (v === pv && player.riding) continue;
+    if (!inBox(v.pos.x, v.pos.z, v === pv ? 1.2 : .6)) continue;
+    const isPlayer = v === pv;
+    const side = axis === 'x' ? sideOf(v.pos.z, cz) : sideOf(v.pos.x, cx);
+    if (axis === 'x') v.pos.z = cz + side * 4.5;
+    else v.pos.x = cx + side * 4.5;
+    v.velocity?.multiplyScalar(.18);
+    v.knock?.set(axis === 'x' ? 0 : side * 10, axis === 'x' ? side * 10 : 0);
+    v.knockTimer = 1.3;
+    v.applyDamage?.(isPlayer ? 34 + speed * 2.4 : 28 + speed * 1.6, { x: v.pos.x, y: v.pos.y + 1, z: v.pos.z });
+    if (isPlayer) {
+      game.camShake = Math.max(game.camShake || 0, 1);
+      game.notify?.('Your vehicle was hit by the train!', 'bad');
+    }
+    game.effects?.sparksAt(v.pos.x, v.pos.y + .8, v.pos.z, 16);
+    hit = true;
+  }
+
+  // pedestrians caught on the crossing
+  for (const p of game.npcs?.peds || []) {
+    if (p.state === 'down' || !inBox(p.x, p.z, .35)) continue;
+    const side = axis === 'x' ? sideOf(p.z, cz) : sideOf(p.x, cx);
+    if (axis === 'x') p.z = cz + side * 5;
+    else p.x = cx + side * 5;
+    p.state = 'down'; p.downTimer = rand(6, 10);
+    p.heading = service.group.rotation.y + rand(-1, 1);
+    hit = true;
+  }
+
+  if (hit) {
+    service.hitCooldown = 1.1;
+    game.audio?.trainHorn?.();
+    game.npcs?.panic?.(c.x, c.z, 48);
+  }
+}
+
+function trainCollision(a, b, city) {
+  const game = city.game;
+  if (a.collisionCool > 0 || b.collisionCool > 0) return;
+  if (a.derailed || b.derailed) return;
+  a.collisionCool = 10;
+  b.collisionCool = 10;
+  const ax = a.group.position.x, bx = b.group.position.x;
+  const mx = (ax + bx) * .5;
+  const mz = a.z ?? a.group.position.z;
+  a.speed = 0;
+  b.speed = 0;
+  if ('derailed' in a) derailCommuter(a, city);
+  if ('derailed' in b) derailCommuter(b, city);
+  a.stallTimer = 14; b.stallTimer = 14;
+  game?.effects?.explosion?.(mx, 1.4, mz);
+  game?.effects?.sparksAt?.(mx, 1.2, mz, 36);
+  game?.audio?.crash?.(10);
+  game?.audio?.trainHorn?.();
+  if (game) game.camShake = Math.max(game.camShake || 0, 1);
+  game?.notify?.('Train collision at Nova Junction — service suspended', 'bad');
+}
+
 function updateCommuterService(service, city, dt, elapsed) {
   const s = service;
   const sw = city.railSwitch;
@@ -1400,6 +1583,32 @@ function updateCommuterService(service, city, dt, elapsed) {
     return;
   }
   s.group.position.z = s.z;
+  s.collisionCool = Math.max(0, (s.collisionCool || 0) - dt);
+  // Dispatch headway: keep clear of any train sharing this running line.
+  // A manual junction setting bypasses the safeguard, so the player can
+  // intentionally route two trains into the same block.
+  const manualPoints = !!city.railJunction?.manual;
+  let trainAhead = Infinity, trainOverlap = 0, trainOther = null;
+  for (const other of [city.rail, city.rail2, city.freightRail]) {
+    if (!other || other === s) continue;
+    const oz = other.z ?? other.group.position.z;
+    if (Math.abs(oz - s.z) > 3.2) continue;
+    const dx = (other.group.position.x - s.group.position.x) * s.dir;
+    const reach = ((other.trainLength || 70) + (s.trainLength || 70)) * .5;
+    if (dx > 0 && dx < 230) {
+      const gap = dx - reach;
+      if (gap < trainAhead) { trainAhead = gap; trainOther = other; }
+    }
+    if (Math.abs(dx) < reach - .4) trainOverlap = Math.max(trainOverlap, reach - Math.abs(dx));
+  }
+  if (trainOverlap > .5 && s.collisionCool <= 0 && !s.derailed && trainOther) {
+    trainCollision(s, trainOther, city);
+  }
+  if (s.stallTimer > 0) {
+    s.stallTimer -= dt;
+    s.speed = 0;
+  }
+  if (manualPoints) trainAhead = Infinity;
   const obs = railObstacleDistance(s, city);
   s.blocked = obs < 82;
   if (s.dwell > 0) {
@@ -1413,6 +1622,7 @@ function updateCommuterService(service, city, dt, elapsed) {
   } else if (s.express) {
     s.doorOpen = false;
     let target = s.maxSpeed;
+    if (trainAhead < 150) target = Math.min(target, Math.max(0, (trainAhead - 7) * .55));
     if (s.blocked) {
       target = Math.min(target, Math.max(0, obs * .34));
       if (obs < 3.2) { target = 0; s.blockTimer += dt; }
@@ -1428,6 +1638,7 @@ function updateCommuterService(service, city, dt, elapsed) {
   } else {
     const next = s.nextStationDistance();
     let target = s.maxSpeed;
+    if (trainAhead < 150) target = Math.min(target, Math.max(0, (trainAhead - 7) * .55));
     if (next < 95) target = Math.min(target, clamp(next * .34, 0, s.maxSpeed));
     if (next < 2.3 && s.speed < 3) {
       s.speed = 0;
@@ -1464,16 +1675,13 @@ function updateCommuterService(service, city, dt, elapsed) {
   let p = s.progress + s.speed * dt;
   if (p >= s.length) {
     p -= s.length;
-    if (s.express) {
-      s.track = s.track === 1 ? 2 : 1;
-      s.z = s.track === 2 ? s.z2 : s.z1;
-    }
     s.blockTimer = 0; s.creeping = false; s.creepTimer = 0;
   }
   s.progress = p;
   s.group.position.x = s.origin + s.dir * s.progress;
   s.group.rotation.y = s.dir > 0 ? Math.PI / 2 : -Math.PI / 2;
   if (s.speed > .01) s.group.userData.wheels?.forEach(w => w.rotation.x += s.speed * dt / .55);
+  if (s.speed > .6) trainImpacts(s, city, dt, 'x');
   animateTrainDoors(s, dt);
 }
 
@@ -1567,17 +1775,29 @@ function buildMonorailTrain() {
 function buildCommuterTrain(livery = 'nova') {
   const g = new THREE.Group();
   const express = livery === 'express';
-  const bodyMat = new THREE.MeshStandardMaterial({ color: express ? 0x2c3c55 : 0xd4dade, roughness: .42, metalness: .48 });
-  const bandMat = new THREE.MeshStandardMaterial({ color: express ? 0x182131 : 0x313d46, roughness: .5, metalness: .45 });
+  const metro = livery === 'metro';
+  const heritage = livery === 'heritage';
+  const coast = livery === 'coast';
+  const palette = {
+    nova:     { body: 0xd4dade, band: 0x313d46, roof: 0x9aa5a9, accent: 0x27a9c1, seat: 0x365b6c },
+    express:  { body: 0x2c3c55, band: 0x182131, roof: 0x2b3546, accent: 0xd9b45a, seat: 0x3a4358 },
+    coast:    { body: 0xe9eef0, band: 0x27536e, roof: 0xc3cdd1, accent: 0x2f86c4, seat: 0x3d6478 },
+    metro:    { body: 0xa9383d, band: 0x272c33, roof: 0x8f969a, accent: 0xeadfc4, seat: 0x5c3a3e },
+    heritage: { body: 0x2d5b45, band: 0x1c3629, roof: 0xb59a6c, accent: 0xd9b56a, seat: 0x6d4b35 },
+  }[livery] || { body: 0xd4dade, band: 0x313d46, roof: 0x9aa5a9, accent: 0x27a9c1, seat: 0x365b6c };
+  const bodyMat = new THREE.MeshStandardMaterial({ color: palette.body, roughness: .42, metalness: .48 });
+  const bandMat = new THREE.MeshStandardMaterial({ color: palette.band, roughness: .5, metalness: .45 });
   const darkMat = new THREE.MeshStandardMaterial({ color: 0x1b2228, roughness: .55, metalness: .5 });
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x0d2733, roughness: .05, metalness: .8 });
-  const accent = new THREE.MeshStandardMaterial({ color: express ? 0xd9b45a : 0x27a9c1, roughness: .35, metalness: .45 });
-  const seatMat = new THREE.MeshStandardMaterial({ color: express ? 0x3a4358 : 0x365b6c, roughness: .9 });
-  const roofMat = new THREE.MeshStandardMaterial({ color: express ? 0x2b3546 : 0x9aa5a9, roughness: .55, metalness: .4 });
+  const accent = new THREE.MeshStandardMaterial({ color: palette.accent, roughness: .35, metalness: .45 });
+  const seatMat = new THREE.MeshStandardMaterial({ color: palette.seat, roughness: .9 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: palette.roof, roughness: .55, metalness: .4 });
   const wheels = [];
   const doors = [];
   const cars = [];
-  const carLen = 16, gap = 2.1;
+  const carLen = metro ? 13.2 : heritage ? 14.4 : 16;
+  const gap = metro ? 1.4 : 2.1;
+  const carCount = metro ? 2 : express ? 4 : 3;
 
   const addBogie = (car, z) => {
     const truck = new THREE.Mesh(new THREE.BoxGeometry(2.0, .5, 2.9), darkMat); truck.position.set(0, .62, z); car.add(truck);
@@ -1594,17 +1814,26 @@ function buildCommuterTrain(livery = 'nova') {
     const noseZ = sign * (carLen / 2 + .95);
     const nose = new THREE.Mesh(new THREE.BoxGeometry(2.95, 2.35, 1.9), bodyMat);
     nose.position.set(0, 1.95, noseZ); nose.castShadow = true; car.add(nose);
-    const cap = new THREE.Mesh(new THREE.SphereGeometry(1.48, 16, 12), bodyMat);
-    cap.scale.set(1.0, .82, .8); cap.position.set(0, 2.05, sign * (carLen / 2 + 1.7)); car.add(cap);
+    if (metro) {
+      // flat-faced metro front with a full-width windscreen
+      const face = new THREE.Mesh(new THREE.BoxGeometry(2.92, 2.2, .3), bodyMat);
+      face.position.set(0, 2.0, sign * (carLen / 2 + 1.9)); car.add(face);
+      const screen = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.32, .1), glassMat);
+      screen.position.set(0, 2.5, sign * (carLen / 2 + 2.08)); car.add(screen);
+    } else {
+      const cap = new THREE.Mesh(new THREE.SphereGeometry(1.48, 16, 12), bodyMat);
+      cap.scale.set(1.0, .82, heritage ? 1.35 : .8);
+      cap.position.set(0, 2.05, sign * (carLen / 2 + (heritage ? 2.0 : 1.7))); car.add(cap);
+    }
     const wind = new THREE.Mesh(new THREE.BoxGeometry(2.55, 1.24, .12), glassMat);
     wind.position.set(0, 2.86, sign * (carLen / 2 + 1.62)); wind.rotation.x = sign * .34; car.add(wind);
     const lowerWind = new THREE.Mesh(new THREE.BoxGeometry(2.2, .52, .1), glassMat);
     lowerWind.position.set(0, 1.72, sign * (carLen / 2 + 1.91)); car.add(lowerWind);
-    const display = new THREE.Mesh(new THREE.BoxGeometry(1.55, .3, .06), new THREE.MeshBasicMaterial({ color: express ? 0xffd982 : 0x8ceaff, toneMapped: false }));
-    display.position.set(0, 3.55, sign * (carLen / 2 + 1.83)); car.add(display);
+    const display = new THREE.Mesh(new THREE.BoxGeometry(1.55, .3, .06), new THREE.MeshBasicMaterial({ color: express || heritage ? 0xffd982 : 0x8ceaff, toneMapped: false }));
+    display.position.set(0, metro ? 3.3 : 3.55, sign * (carLen / 2 + (metro ? 2.2 : 1.83))); car.add(display);
     for (const s of [-1, 1]) {
       const lamp = new THREE.Mesh(new THREE.CircleGeometry(.18, 12), new THREE.MeshBasicMaterial({ color: front ? 0xfff5d2 : 0xff3126, toneMapped: false }));
-      lamp.position.set(s * 1.02, 1.48, sign * (carLen / 2 + 2.02)); if (!front) lamp.rotation.y = Math.PI; car.add(lamp);
+      lamp.position.set(s * 1.02, 1.48, sign * (carLen / 2 + (metro ? 2.22 : 2.02))); if (!front) lamp.rotation.y = Math.PI; car.add(lamp);
     }
     const skirt = new THREE.Mesh(new THREE.BoxGeometry(2.7, .42, 1.5), darkMat);
     skirt.position.set(0, .78, sign * (carLen / 2 + 1.55)); car.add(skirt);
@@ -1619,11 +1848,17 @@ function buildCommuterTrain(livery = 'nova') {
     body.position.y = 1.95; body.castShadow = true; car.add(body);
     const roof = new THREE.Mesh(new THREE.CylinderGeometry(1.54, 1.54, carLen - .3, 18, 1), roofMat);
     roof.rotation.x = Math.PI / 2; roof.position.y = 2.92; roof.castShadow = true; car.add(roof);
-    const band = new THREE.Mesh(new THREE.BoxGeometry(3.13, 1.06, carLen - 1.25), glassMat);
-    band.position.y = 2.62; car.add(band);
-    for (const zz of [-5.6, -2.8, 0, 2.8, 5.6]) {
-      const pillar = new THREE.Mesh(new THREE.BoxGeometry(3.16, 1.1, .09), bodyMat);
-      pillar.position.set(0, 2.62, zz); car.add(pillar);
+    const bandH = coast ? 1.58 : heritage ? .92 : 1.06;
+    const bandY = coast ? 2.66 : 2.62;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(3.13, bandH, carLen - (coast ? .6 : 1.25)), glassMat);
+    band.position.y = bandY; car.add(band);
+    if (coast) {
+      const trim = new THREE.Mesh(new THREE.BoxGeometry(3.15, .08, carLen - .5), accent);
+      trim.position.y = bandY + bandH / 2 + .05; car.add(trim);
+    }
+    for (let k = -2; k <= 2; k++) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(3.16, bandH + .06, coast ? .14 : heritage ? .05 : .09), bodyMat);
+      pillar.position.set(0, bandY, (carLen / 5.2) * k); car.add(pillar);
     }
     const skirt = new THREE.Mesh(new THREE.BoxGeometry(3.0, .58, carLen - .5), darkMat);
     skirt.position.y = .76; car.add(skirt);
@@ -1659,7 +1894,7 @@ function buildCommuterTrain(livery = 'nova') {
     g.add(car); cars.push(car);
   };
 
-  addCar(0, 0); addCar(-(carLen + gap), 1); addCar(-2 * (carLen + gap), 2); addCar(-3 * (carLen + gap), 3);
+  for (let i = 0; i < carCount; i++) addCar(-i * (carLen + gap), i);
 
   // pantograph on the second car
   const panto = new THREE.Group();
@@ -1669,10 +1904,10 @@ function buildCommuterTrain(livery = 'nova') {
   const lowerArm = new THREE.Mesh(new THREE.BoxGeometry(.09, 1.8, .09), darkMat); lowerArm.position.set(0, .9, .4); lowerArm.rotation.x = -.5; panto.add(lowerArm);
   const upperArm = new THREE.Mesh(new THREE.BoxGeometry(.07, 1.5, .07), darkMat); upperArm.position.set(0, 2.1, 1.0); upperArm.rotation.x = .6; panto.add(upperArm);
   const collector = new THREE.Mesh(new THREE.BoxGeometry(1.5, .09, .16), new THREE.MeshStandardMaterial({ color: 0x6a7074, roughness: .4, metalness: .7 })); collector.position.set(0, 2.75, 1.42); panto.add(collector);
-  g.add(panto);
+  if (!metro) g.add(panto);
 
   // inter-car gangways
-  for (let i = 1; i < 4; i++) {
+  for (let i = 1; i < carCount; i++) {
     const bellows = new THREE.Mesh(new THREE.BoxGeometry(2.35, 2.3, .85), bandMat);
     bellows.position.set(0, 2.05, -(carLen + gap) * i + (carLen + gap) / 2); g.add(bellows);
   }
@@ -1681,21 +1916,22 @@ function buildCommuterTrain(livery = 'nova') {
   g.userData.doors = doors;
   g.userData.cars = cars;
   g.userData.pantograph = panto;
-  g.userData.trainLength = 3 * (carLen + gap) + carLen;
+  g.userData.trainLength = (carCount - 1) * (carLen + gap) + carLen;
   return g;
 }
 
-function buildFreightTrain() {
+function buildFreightTrain(variant = 'boxcar') {
   const g = new THREE.Group();
+  const tanker = variant === 'tanker';
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4c5a62, roughness: .62, metalness: .45 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x22282c, roughness: .85 });
   const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1f2327, roughness: .9 });
   const wheels = [];
-  const colors = [0x8a3a32, 0x2f5570, 0x6b6f45, 0x8a7a3b];
+  const colors = tanker ? [0x9b8f63, 0x7d6a45, 0x8a5a3a, 0x6a7a6a] : [0x8a3a32, 0x2f5570, 0x6b6f45, 0x8a7a3b];
   const loco = new THREE.Group();
   const lb = new THREE.Mesh(new THREE.BoxGeometry(3.2, 3.1, 13), bodyMat); lb.position.y = 2.2; loco.add(lb);
   const cab = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.4, 3), new THREE.MeshStandardMaterial({ color: 0x243540, roughness: .4, metalness: .5 })); cab.position.set(0, 3.5, 4.4); loco.add(cab);
-  const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.22, .35, 12.8), new THREE.MeshStandardMaterial({ color: 0xd7b23f, roughness: .5 })); stripe.position.y = 1.4; loco.add(stripe);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(3.22, .35, 12.8), new THREE.MeshStandardMaterial({ color: tanker ? 0xcf7a25 : 0xd7b23f, roughness: .5 })); stripe.position.y = 1.4; loco.add(stripe);
   for (const s of [-1, 1]) {
     const light = new THREE.Mesh(new THREE.SphereGeometry(.2, 8, 6), new THREE.MeshBasicMaterial({ color: 0xfff0c0, toneMapped: false }));
     light.position.set(s * 1, 2.4, 6.6); loco.add(light);
@@ -1710,9 +1946,28 @@ function buildFreightTrain() {
   for (let i = 0; i < 4; i++) {
     const car = new THREE.Group();
     const flat = new THREE.Mesh(new THREE.BoxGeometry(3.2, .3, 15), dark); flat.position.y = 1.2; car.add(flat);
-    const box = new THREE.Mesh(new THREE.BoxGeometry(3.32, 2.9, 14.2), new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: .75, metalness: .25 })); box.position.y = 2.8; box.castShadow = true; car.add(box);
-    for (let r = -6; r <= 6; r += 1.2) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(3.34, 2.8, .06), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: .16 })); rib.position.set(0, 2.8, r); car.add(rib);
+    if (tanker) {
+      const tankMat = new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: .5, metalness: .55 });
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.55, 1.55, 13.6, 16), tankMat);
+      tank.rotation.x = Math.PI / 2; tank.position.y = 2.9; tank.castShadow = true; car.add(tank);
+      const domeMat = new THREE.MeshStandardMaterial({ color: 0x3a3f42, roughness: .6, metalness: .5 });
+      for (const dz of [-4.4, 0, 4.4]) {
+        const dome = new THREE.Mesh(new THREE.CylinderGeometry(.62, .7, .55, 12), domeMat);
+        dome.position.set(0, 4.42, dz); car.add(dome);
+      }
+      const walkway = new THREE.Mesh(new THREE.BoxGeometry(1.15, .08, 13.2), new THREE.MeshStandardMaterial({ color: 0x555b5e, roughness: .7 }));
+      walkway.position.set(0, 4.5, 0); car.add(walkway);
+      for (const s of [-1, 1]) {
+        const ladder = new THREE.Mesh(new THREE.BoxGeometry(.1, 2.5, .5), dark);
+        ladder.position.set(s * 1.65, 2.4, 6.4); car.add(ladder);
+      }
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(1.57, 1.57, .28, 16), new THREE.MeshStandardMaterial({ color: 0x2c3134, roughness: .8 }));
+      band.rotation.x = Math.PI / 2; band.position.set(0, 2.9, 4.6); car.add(band);
+    } else {
+      const box = new THREE.Mesh(new THREE.BoxGeometry(3.32, 2.9, 14.2), new THREE.MeshStandardMaterial({ color: colors[i % colors.length], roughness: .75, metalness: .25 })); box.position.y = 2.8; box.castShadow = true; car.add(box);
+      for (let r = -6; r <= 6; r += 1.2) {
+        const rib = new THREE.Mesh(new THREE.BoxGeometry(3.34, 2.8, .06), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1, transparent: true, opacity: .16 })); rib.position.set(0, 2.8, r); car.add(rib);
+      }
     }
     for (const zz of [-5, 5]) {
       const truck = new THREE.Mesh(new THREE.BoxGeometry(2.1, .5, 2.6), dark); truck.position.y = .65; truck.position.z = zz; car.add(truck);
@@ -1723,21 +1978,25 @@ function buildFreightTrain() {
     car.position.z = -18 - i * 16.4; g.add(car);
   }
   g.userData.wheels = wheels;
+  g.userData.variant = variant;
+  g.userData.trainLength = 4 * 16.4 + 12;
   return g;
 }
 
-function buildTramTrain() {
+function buildTramTrain(variant = 'island') {
   const g = new THREE.Group();
-  const shell = new THREE.MeshStandardMaterial({ color: 0xe7edf0, roughness: .3, metalness: .35 });
+  const heritage = variant === 'heritage';
+  const shell = new THREE.MeshStandardMaterial({ color: heritage ? 0x7a2f2c : 0xe7edf0, roughness: .34, metalness: .35 });
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x143a4d, roughness: .07, metalness: .7 });
-  const accent = new THREE.MeshStandardMaterial({ color: 0xc9973a, roughness: .4, metalness: .3 });
+  const accent = new THREE.MeshStandardMaterial({ color: heritage ? 0xe4c98a : 0xc9973a, roughness: .4, metalness: .3 });
+  const trim = new THREE.MeshStandardMaterial({ color: heritage ? 0x4a3320 : 0x262f36, roughness: heritage ? .75 : .7 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x262f36, roughness: .7 });
   const wheels = [];
   const cars = [];
   for (let i = 0; i < 2; i++) {
     const car = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(2.7, 2.0, 9.4), shell); body.position.y = 1.45; car.add(body);
-    const skirt = new THREE.Mesh(new THREE.BoxGeometry(2.6, .4, 9.1), dark); skirt.position.y = .55; car.add(skirt);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(2.6, .4, 9.1), trim); skirt.position.y = .55; car.add(skirt);
     const glass = new THREE.Mesh(new THREE.BoxGeometry(2.74, .8, 8.2), glassMat); glass.position.y = 1.95; car.add(glass);
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.76, .18, 9.3), accent); stripe.position.y = 1.3; car.add(stripe);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(2.55, .18, 9.0), shell); roof.position.y = 2.55; car.add(roof);
@@ -1745,9 +2004,25 @@ function buildTramTrain() {
       const door = new THREE.Mesh(new THREE.BoxGeometry(.05, 1.55, 1.2), glassMat); door.position.set(s * 1.38, 1.4, zz); car.add(door);
     }
     if (i === 0) {
+      if (heritage) {
+        const nose = new THREE.Mesh(new THREE.SphereGeometry(1.24, 14, 10), shell);
+        nose.scale.set(1.05, .78, 1.2); nose.position.set(0, 1.5, 5.0); car.add(nose);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(1.18, .075, 6, 18), accent);
+        ring.position.set(0, 1.5, 6.02); car.add(ring);
+        for (const s of [-1, 1]) {
+          const lamp = new THREE.Mesh(new THREE.CylinderGeometry(.2, .2, .16, 12), accent);
+          lamp.rotation.x = Math.PI / 2; lamp.position.set(s * .62, 1.95, 5.9); car.add(lamp);
+        }
+        const board = new THREE.Mesh(new THREE.BoxGeometry(1.3, .32, .06), accent);
+        board.position.set(0, 2.5, 5.72); car.add(board);
+      }
       const cab = new THREE.Mesh(new THREE.BoxGeometry(2.3, .9, .1), glassMat); cab.position.set(0, 1.85, 4.72); car.add(cab);
       for (const s of [-1, 1]) {
         const light = new THREE.Mesh(new THREE.BoxGeometry(.3, .18, .1), new THREE.MeshBasicMaterial({ color: 0xfff4d0, toneMapped: false })); light.position.set(s * .95, 1.0, 4.75); car.add(light);
+      }
+      if (heritage) {
+        const bell = new THREE.Mesh(new THREE.SphereGeometry(.16, 8, 6), accent);
+        bell.position.set(0, 2.72, 4.1); car.add(bell);
       }
     }
     for (const zz of [-3, 3]) {
@@ -1760,6 +2035,19 @@ function buildTramTrain() {
     car.position.z = -i * 10.2;
     g.add(car); cars.push(car);
   }
+  if (heritage) {
+    const panto = new THREE.Group();
+    panto.position.set(0, 2.66, -10.2);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(.07, 1.5, .07), dark);
+    arm.rotation.x = -.55; arm.position.set(0, .75, .2); panto.add(arm);
+    const arm2 = new THREE.Mesh(new THREE.BoxGeometry(.06, 1.2, .06), dark);
+    arm2.rotation.x = .7; arm2.position.set(0, 1.6, .7); panto.add(arm2);
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(1.2, .07, .12), accent);
+    bar.position.set(0, 2.18, .98); panto.add(bar);
+    g.add(panto);
+    g.userData.pantograph = panto;
+  }
+  g.userData.variant = variant;
   g.userData.wheels = wheels;
   g.userData.cars = cars;
   g.userData.trainLength = 21;
@@ -1780,6 +2068,33 @@ export function buildAirport(city, rng) {
   }
   const taxi = new THREE.Mesh(new THREE.PlaneGeometry(18, 220), new THREE.MeshStandardMaterial({ color: 0x34383c, roughness: .95 }));
   taxi.rotation.x = -Math.PI / 2; taxi.position.set(cx + 28, .07, cz); root.add(taxi);
+
+  // Access road: ties the airfield into the eastern city grid at x = 384.
+  const roadMat = new THREE.MeshStandardMaterial({ color: 0x2c3034, roughness: .95 });
+  const roadStart = 372, roadEnd = 596, roadZ = cz + 4;
+  const access = new THREE.Mesh(new THREE.PlaneGeometry(roadEnd - roadStart, 18), roadMat);
+  access.rotation.x = -Math.PI / 2; access.position.set((roadStart + roadEnd) / 2, .07, roadZ); root.add(access);
+  const accessDashMat = new THREE.MeshBasicMaterial({ color: 0xe8e6d9 });
+  for (let x = roadStart + 6; x < roadEnd - 4; x += 14) {
+    const dash = new THREE.Mesh(new THREE.PlaneGeometry(7, .55), accessDashMat);
+    dash.rotation.x = -Math.PI / 2; dash.position.set(x, .09, roadZ); root.add(dash);
+  }
+  for (const s of [-1, 1]) {
+    const curb = new THREE.Mesh(new THREE.BoxGeometry(roadEnd - roadStart, .22, .8), new THREE.MeshStandardMaterial({ color: 0x9a9a92, roughness: .9 }));
+    curb.position.set((roadStart + roadEnd) / 2, .12, roadZ + s * 9.4); root.add(curb);
+  }
+  // Terminal forecourt where the road meets the apron.
+  const forecourt = new THREE.Mesh(new THREE.PlaneGeometry(58, 34), roadMat);
+  forecourt.rotation.x = -Math.PI / 2; forecourt.position.set(cx - 66, .075, cz + 42); root.add(forecourt);
+  const dropOff = new THREE.Mesh(new THREE.BoxGeometry(44, 3.4, 3), new THREE.MeshStandardMaterial({ color: 0x3f474c, roughness: .7 }));
+  dropOff.position.set(cx - 66, 1.7, cz + 26); root.add(dropOff);
+  // Road sign on the approach.
+  const roadSign = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.6), new THREE.MeshBasicMaterial({ map: signTexture('NOVA AIR', '#123244', '#dff4ff', 'AIRPORT · TERMINAL'), transparent: true }));
+  roadSign.position.set(roadStart + 24, 3.4, roadZ - 12); root.add(roadSign);
+  const signPost = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, 3.4, 6), city.metalMat);
+  signPost.position.set(roadStart + 24, 1.7, roadZ - 12); root.add(signPost);
+  city.airportRoad = { x: (roadStart + roadEnd) / 2, z: roadZ, w: roadEnd - roadStart, d: 18 };
+  (city.islandRoads ||= []).push(city.airportRoad, { x: cx - 66, z: cz + 42, w: 58, d: 34 });
   // terminal
   const term = new THREE.Mesh(new THREE.BoxGeometry(50, 12, 26), new THREE.MeshStandardMaterial({ color: 0x8c969c, roughness: .4, metalness: .3 }));
   term.position.set(cx - 40, 6, cz + 80); root.add(term);

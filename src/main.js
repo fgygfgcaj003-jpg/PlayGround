@@ -151,6 +151,8 @@ class Game {
 
       this.vehicles = new VehicleManager(this);
       this.vehicles.spawnParkedCity();
+      this.vehicles.spawnAirportFleet();
+      this.vehicles.spawnMilitary();
       const trafficCount = this.settings.quality === 'low' ? 84 : 140;
       this.vehicles.spawnTraffic(trafficCount);
       this.onTrafficCollision = (pv, other) => this.handleTrafficCollision(pv, other);
@@ -646,6 +648,9 @@ class Game {
     if (poi.type === 'monorail') return `Board monorail · ${poi.name.replace(' Monorail', '')}`;
     if (poi.type === 'train') return poi.line === 'island' ? 'Board the Palm Island Line' : 'Board commuter rail';
     if (poi.type === 'metro') return 'Ride the metro';
+    if (poi.type === 'railswitch') {
+      return this.city.railJunction?.routeMain ? 'Switch junction · send freight to main line' : 'Switch junction · send freight to siding';
+    }
     if (poi.type === 'marina') return 'Visit Harbor Marina';
     if (poi.type === 'park') return 'Relax in Aurora Park';
     if (poi.type === 'airport') return 'Watch the airport';
@@ -680,6 +685,17 @@ class Game {
       const n = this.transit.metroEntrances.length;
       const next = ((poi.metro ?? 0) + 1) % n;
       this.transit.metroTravel(next);
+      return;
+    }
+    if (poi.type === 'railswitch') {
+      const j = this.city.railJunction;
+      if (!j) return;
+      const main = j.toggle();
+      this.audio?.switchClick?.();
+      this.audio?.beep?.(main ? 520 : 430, .12, 'square', .05);
+      this.notify(main
+        ? 'Junction set to main line — freight will cross the passenger tracks'
+        : 'Junction set to siding — freight stays clear of passenger tracks', main ? 'warn' : 'good');
       return;
     }
     if (poi.type === 'marina') {
@@ -880,12 +896,20 @@ class Game {
     if (!v || this.player.vehicle || this.player.riding) return;
     const wasService = !!v.service;
     const wasTraffic = v.mode === 'traffic';
+    const military = v.service === 'army' || !!v.cfg?.isTank;
     this.vehicles.startDriving(v);
     this.player.enteredVehicle(v);
     this.lastVehicle = v;
     this.mode = 'driving';
     this.ui.setPrompt(null);
-    if (!v.owned && (wasService || wasTraffic)) {
+    if (!v.owned && military) {
+      this.wanted.commit(9.5, this.player.pos, true);
+      this.emergency.dispatchArmy(this.player.pos, 3);
+      this.npcs.panic(v.pos.x, v.pos.z, 60);
+      this.ui.damageFlash?.();
+      this.audio?.trainHorn?.();
+      this.notify('MILITARY VEHICLE STOLEN — 5 stars, Fort Nova armour deployed', 'bad');
+    } else if (!v.owned && (wasService || wasTraffic)) {
       const severity = wasService ? 2.2 : 1.2;
       this.wanted.commit(severity, this.player.pos, true);
       this.npcs.panic(v.pos.x, v.pos.z, 26);
@@ -975,8 +999,24 @@ class Game {
     this.notify('You struck a pedestrian — witnesses are calling 911', 'bad');
   }
 
-  handleVehicleFeedback() {
-    const pv = this.vehicles.playerVehicle;
+  damagePlayer(amount, source = '') {
+    if (!this.started) return;
+    this.health = clamp(this.health - amount, 0, 100);
+    this.ui?.damageFlash?.();
+    this.camShake = Math.max(this.camShake, Math.min(1, amount / 40));
+    if (this.health <= 0) {
+      this.health = 40;
+      const hospital = this.city.pois.find(p => p.type === 'hospital') || { x: 10, z: 34 };
+      if (this.player.vehicle) this.exitVehicle(true);
+      this.player.setPosition(hospital.x + 6, hospital.z + 6, .18);
+      this.player.velocity.set(0, 0, 0);
+      this.money = Math.max(0, this.money - 250);
+      this.ui?.updateMoney?.();
+      this.notify('You were hospitalised — medical bill $250', 'bad');
+    }
+  }
+
+  handleVehicleFeedback() {    const pv = this.vehicles.playerVehicle;
     if (pv && pv.damageFlash > 0) {
       pv.damageFlash = 0;
       this.ui.damageFlash();

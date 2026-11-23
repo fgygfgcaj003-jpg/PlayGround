@@ -28,6 +28,7 @@ export class WantedSystem {
       this.game.notify(`WANTED LEVEL ${level} — ${this.levelDesc(level)}`, 'bad');
       this.game.audio?.beep(220, .12, 'square', .06);
       if (level >= 1) this.game.emergency.dispatchPolice(pos, Math.min(4, level), level);
+      if (level >= 5) this.game.emergency.dispatchArmy(pos, 3);
     } else {
       this.level = level;
     }
@@ -74,6 +75,7 @@ export class WantedSystem {
     if (this.level > 0 && this.searchTimer <= 0) {
       this.searchTimer = 12;
       this.game.emergency.dispatchPolice(this.lastKnown, this.level >= 3 ? 2 : 1, this.level);
+      if (this.level >= 5) this.game.emergency.dispatchArmy(this.lastKnown, 3);
     }
   }
 
@@ -183,6 +185,43 @@ export class EmergencySystem {
     this.game.notify('Dispatch: NCPD units en route', 'warn');
   }
 
+  dispatchArmy(pos, count = 2) {
+    const base = this.game.city?.militaryBase;
+    if (!base) return;
+    let active = 0;
+    for (const u of this.units) {
+      if (u.type !== 'army' || u.state === 'stolen') continue;
+      active++;
+      if (active <= count) {
+        this.setDestination(u, pos);
+        u.state = 'chase';
+        u.siren = true;
+        u.level = 5;
+        u.vehicle.lightsOn = true;
+      }
+    }
+    let spawned = Math.max(0, count - active);
+    while (spawned > 0) {
+      const heavy = spawned % 2 === 0;
+      const type = heavy ? 'tank' : 'army';
+      const v = this.game.vehicles.spawn(type, base.x + rand(-70, 70), base.z + rand(-50, 70), rand(0, TAU), {
+        service: 'army', color: 0x4b5638,
+      });
+      v.mode = 'service';
+      v.lightsOn = true;
+      const u = {
+        vehicle: v, type: 'army', state: 'chase', path: [], target: new THREE.Vector3(),
+        speed: 0, siren: true, timer: 0, onScene: 0,
+        home: new THREE.Vector3(base.x, 0, base.z), level: 5,
+      };
+      this.units.push(u); this.extraUnits.push(v);
+      this.setDestination(u, pos);
+      spawned--;
+    }
+    this.game.notify('FORT NOVA DEPLOYED — armour is rolling out', 'bad');
+    this.game.audio?.trainHorn?.();
+  }
+
   dispatchMedical(pos) {
     const u = this.units.find(u => u.vehicle.service === 'ambulance') || this.makeAmbulanceUnit();
     this.setDestination(u, pos);
@@ -228,13 +267,14 @@ export class EmergencySystem {
     if (v.isPlayer || v.mode === 'player') return;
     let target = u.target;
     const wanted = this.game.wanted.level;
-    if (u.type === 'police' && wanted > 0) {
+    if ((u.type === 'police' || u.type === 'army') && wanted > 0) {
       const dPlayer = Math.hypot(v.pos.x - this.game.player.pos.x, v.pos.z - this.game.player.pos.z);
-      if (dPlayer < 48 && !this.game.player.vehicle) {
+      const reach = u.type === 'army' ? 150 : 60;
+      if (dPlayer < reach && (!this.game.player.vehicle || wanted >= 4 || u.type === 'army')) {
         target = this.game.player.pos;
         u.state = 'chase';
         u.path = [];
-      } else if (u.state === 'chase' && dPlayer > 80) {
+      } else if (u.state === 'chase' && dPlayer > reach + 40) {
         u.state = 'responding';
         u.target.set(this.game.wanted.lastKnown.x, 0, this.game.wanted.lastKnown.z);
       }
@@ -261,7 +301,7 @@ export class EmergencySystem {
       const desired = Math.atan2(dx, dz);
       let diff = ((desired - v.heading + Math.PI) % TAU + TAU) % TAU - Math.PI;
       v.heading += clamp(diff, -dt * 2.1, dt * 2.1);
-      const maxSpeed = u.type === 'fire' ? 15 : 21;
+      const maxSpeed = u.type === 'fire' ? 15 : u.type === 'army' ? 18 : 24;
       const targetSpeed = u.state === 'onScene' ? 0 : maxSpeed;
       u.speed = lerp(u.speed, targetSpeed, dt * 1.2);
       const fx = Math.sin(v.heading), fz = Math.cos(v.heading);

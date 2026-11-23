@@ -20,6 +20,27 @@ export class Vehicle {
     this.rotor = this.model.rotor;
     this.tailRotor = this.model.tailRotor;
     this.rider = this.model.rider;
+    this.turret = this.model.turret || null;
+    // Body rig keeps the wheels planted while the shell leans under load.
+    const keepOutsideRig = new Set(this.wheels.map((w) => w.mesh));
+    if (this.rotor) keepOutsideRig.add(this.rotor);
+    if (this.tailRotor) keepOutsideRig.add(this.tailRotor);
+    const pivotY = Math.max(.3, (this.cfg.wheelR || .35) + .32);
+    this.bodyRig = new THREE.Group();
+    this.bodyRig.position.y = pivotY;
+    for (const child of [...this.model.group.children]) {
+      if (keepOutsideRig.has(child)) continue;
+      this.bodyRig.add(child);
+      child.position.y -= pivotY;
+    }
+    this.model.group.add(this.bodyRig);
+    this.group.userData.bodyRig = this.bodyRig;
+    this.bodyPivotY = pivotY;
+    this.bodyRoll = 0;
+    this.bodyPitch = 0;
+    this.bodyBounce = 0;
+    this.lateralAccel = 0;
+    this.longAccel = 0;
     this.group.position.set(x, opts.y ?? 0.02, z);
     this.group.rotation.y = heading;
     game.scene.add(this.group);
@@ -55,7 +76,6 @@ export class Vehicle {
     this.isPlayer = false;
     this.enterable = true;
     this.doorOpen = false;
-    this.turret = null;
     this.wakeAcc = 0;
     this.speedKmh = 0;
     this.brakeOn = false;
@@ -210,6 +230,8 @@ export class Vehicle {
     }
     // visuals
     this.animateWheels(dt);
+    const bodyLean = clamp(-this.steer * this.speed / 34, -.09, .09);
+    this.updateBodyRig(dt, bodyLean, this.brakeOn ? -.035 : 0, 0);
     this.speedKmh = this.speed * 3.6;
     if (this.lightsOn !== (night > .4 || weather !== 'clear')) { this.lightsOn = night > .4 || weather !== 'clear'; }
     setLightState(this.headMats, this.brakeMats, this.turnMats, { lightsOn: this.lightsOn, braking: this.brakeOn || this.speed < .2 });
@@ -287,13 +309,21 @@ export class Vehicle {
     }
     this.group.rotation.y = this.heading;
     // suspension: body roll, brake dive, acceleration squat and off-road shake
-    if (this.wheels.length) {
-      const accel = (vf - this.lastSpeed) / Math.max(dt, .001);
-      this.offroadShake = offroad ? clamp(Math.abs(vf) / 14, 0, 1) : 0;
-      const rollTarget = clamp(-this.steer * Math.abs(vf) * .0037, -.12, .12);
-      const pitchTarget = clamp(-accel * .0058, -.085, .085) + (offroad ? Math.sin(performance.now() * .012) * .012 : 0);
-      this.group.rotation.z = lerp(this.group.rotation.z, rollTarget, clamp(dt * 7, 0, 1));
-      this.group.rotation.x = lerp(this.group.rotation.x, pitchTarget, clamp(dt * 6, 0, 1));
+    const accel = (vf - this.lastSpeed) / Math.max(dt, .001);
+    this.longAccel = lerp(this.longAccel, accel, clamp(dt * 8, 0, 1));
+    const latTarget = this.steer * vf * vf / Math.max(cfg.wheelbase, 1) * .5;
+    this.lateralAccel = lerp(this.lateralAccel, latTarget, clamp(dt * 9, 0, 1));
+    const rollTarget = clamp(-this.lateralAccel * .0034 - this.steer * Math.abs(vf) * .0018, -.2, .2);
+    let pitchTarget = clamp(-this.longAccel * .0048, -.12, .12);
+    if (this.offroad) pitchTarget += Math.sin(performance.now() * .016) * Math.min(.02, Math.abs(vf) * .0012);
+    if (this.handbrake) pitchTarget += .028;
+    if (this.health < 35) pitchTarget += Math.sin(performance.now() * .0021) * .01;
+    const bounceTarget = this.offroad ? Math.sin(performance.now() * .019) * Math.min(.05, Math.abs(vf) * .0025) : 0;
+    this.updateBodyRig(dt, rollTarget, pitchTarget, bounceTarget);
+    if (this.turret) {
+      const aim = normAngle(this.game.player.cameraYaw - this.heading);
+      const delta = normAngle(aim - this.turret.rotation.y);
+      this.turret.rotation.y = normAngle(this.turret.rotation.y + clamp(delta, -dt * 1.9, dt * 1.9));
     }
     this.lastSpeed = vf;
     this.speed = vf;
@@ -440,6 +470,17 @@ export class Vehicle {
     }
   }
 
+  updateBodyRig(dt, rollTarget, pitchTarget, bounceTarget = 0) {
+    if (!this.bodyRig) return;
+    const k = clamp(dt * 7, 0, 1);
+    this.bodyRoll = lerp(this.bodyRoll, rollTarget, k);
+    this.bodyPitch = lerp(this.bodyPitch, pitchTarget, clamp(dt * 6, 0, 1));
+    this.bodyBounce = lerp(this.bodyBounce, bounceTarget, clamp(dt * 9, 0, 1));
+    this.bodyRig.rotation.z = this.bodyRoll;
+    this.bodyRig.rotation.x = this.bodyPitch;
+    this.bodyRig.position.y = this.bodyPivotY + this.bodyBounce;
+  }
+
   animateWheels(dt) {
     const roll = this.speed * dt / (this.cfg.wheelR || .35);
     const t = performance.now() * .001;
@@ -549,6 +590,7 @@ export class VehicleManager {
     const types = [
       'sedan', 'sedan', 'sedan', 'taxi', 'taxi', 'suv', 'suv', 'sports', 'van', 'van',
       'pickup', 'bus', 'bus', 'truck', 'truck', 'construction', 'motorcycle', 'motorcycle', 'sedan',
+      'hatchback', 'hatchback', 'coupe', 'muscle', 'wagon', 'wagon', 'limo', 'sports', 'super', 'race',
     ];
     const existing = this.vehicles.filter(v => v.mode === 'traffic').length;
     const amount = Math.max(0, Math.min(Math.floor(count), this.trafficLimit - existing));
@@ -573,10 +615,52 @@ export class VehicleManager {
       v.traffic.cruise = type === 'bus' || type === 'truck' ? rand(7, 9)
         : type === 'construction' ? rand(5, 7)
         : type === 'motorcycle' ? rand(13, 17)
+        : type === 'race' ? rand(22, 30)
+        : type === 'super' ? rand(19, 26)
+        : type === 'sports' || type === 'muscle' ? rand(16, 22)
         : rand(10, 14.5);
       spawned++;
     }
     return spawned;
+  }
+
+  spawnAirportFleet() {
+    const fleet = [
+      { type: 'taxi', x: 528, z: 6, heading: Math.PI / 2 },
+      { type: 'taxi', x: 552, z: 10, heading: Math.PI / 2 },
+      { type: 'bus', x: 508, z: -2, heading: Math.PI / 2 },
+      { type: 'van', x: 566, z: -22, heading: -Math.PI / 2 },
+      { type: 'sedan', x: 486, z: -30, heading: Math.PI / 2 },
+      { type: 'suv', x: 600, z: -18, heading: Math.PI },
+    ];
+    this.airportVehicles = [];
+    for (const f of fleet) {
+      const v = this.spawn(f.type, f.x, f.z, f.heading, { color: randomVehicleColor(f.type) });
+      v.mode = 'parked';
+      this.airportVehicles.push(v);
+    }
+    return this.airportVehicles;
+  }
+
+  spawnMilitary() {
+    const base = this.game.city?.militaryBase;
+    if (!base) return [];
+    const units = [
+      { type: 'tank', x: base.x - 74, z: base.z + 34, heading: Math.PI / 2, name: 'Nova MBT' },
+      { type: 'tank', x: base.x - 38, z: base.z + 52, heading: Math.PI / 2, name: 'Nova MBT' },
+      { type: 'tank', x: base.x - 6, z: base.z + 34, heading: Math.PI / 2, name: 'Nova MBT' },
+      { type: 'army', x: base.x + 30, z: base.z + 54, heading: Math.PI / 2, name: 'Atlas Command' },
+      { type: 'army', x: base.x + 44, z: base.z + 54, heading: Math.PI / 2, name: 'Atlas Command' },
+    ];
+    this.militaryVehicles = [];
+    for (const u of units) {
+      const v = this.spawn(u.type, u.x, u.z, u.heading, {
+        service: 'army', color: u.type === 'tank' ? 0x4b5638 : 0x4d5739, name: u.name,
+      });
+      v.mode = 'parked';
+      this.militaryVehicles.push(v);
+    }
+    return this.militaryVehicles;
   }
 
   randomRoadPoint() {
@@ -678,24 +762,38 @@ export class VehicleManager {
   }
 
   handleTrafficCollisions(player) {
-    const pf = { x: Math.sin(player.heading), z: Math.cos(player.heading) };
     for (const v of this.vehicles) {
       if (v === player || v.mode !== 'traffic') continue;
+      if (v.isAir || v.isBoat) continue;
       const dx = v.pos.x - player.pos.x, dz = v.pos.z - player.pos.z;
       const d = Math.hypot(dx, dz);
       const minD = (v.cfg.len + player.cfg.len) * .38;
       if (d < minD && d > .01) {
         const nx = dx / d, nz = dz / d;
         const speed = Math.abs(player.speed);
-        v.knock.set(nx * (2 + speed * .35), nz * (2 + speed * .35));
-        v.knockTimer = .8;
-        v.pos.x += nx * (minD - d) * .8; v.pos.z += nz * (minD - d) * .8;
-        if (player.speed > 4) {
-          player.velocity.multiplyScalar(.82);
-          this.game.effects.sparksAt(v.pos.x, v.pos.y + .8, v.pos.z, 14);
-          v.health = clamp(v.health - Math.min(30, speed * .8), 0, 100);
+        const pMass = player.cfg.mass || 1500;
+        const vMass = v.cfg.mass || 1500;
+        const playerPush = vMass / (pMass + vMass);
+        const otherPush = pMass / (pMass + vMass);
+        v.knock.set(nx * (3 + speed * .5) * otherPush, nz * (3 + speed * .5) * otherPush);
+        v.knockTimer = 1.1;
+        v.pos.x += nx * (minD - d) * otherPush;
+        v.pos.z += nz * (minD - d) * otherPush;
+        player.pos.x -= nx * (minD - d) * playerPush * .8;
+        player.pos.z -= nz * (minD - d) * playerPush * .8;
+        if (speed > 3.5) {
+          player.velocity.multiplyScalar(clamp(1 - otherPush * .3, .55, .96));
+          this.game.effects.sparksAt(v.pos.x, v.pos.y + .8, v.pos.z, 10 + Math.min(16, speed | 0));
+          const transfer = clamp(speed * .9, 0, 48) * (pMass / vMass) * (player.cfg.isTank ? 2.2 : 1);
+          v.health = clamp(v.health - transfer, 0, 100);
+          v.heading += (Math.random() - .5) * clamp(speed * .012, 0, .35);
+          v.group.rotation.y = v.heading;
+          if (!player.cfg.isTank) {
+            const selfDamage = clamp((speed - 3.5) * .7 * playerPush, 0, 14);
+            if (selfDamage > 1) player.applyDamage(selfDamage, { x: player.pos.x, y: player.pos.y + .7, z: player.pos.z });
+          }
           this.game.audio?.crash(speed);
-          this.game.camShake = Math.max(this.game.camShake, Math.min(.8, speed / 35));
+          this.game.camShake = Math.max(this.game.camShake, Math.min(.9, speed / 30 + playerPush * .2));
           this.game.onTrafficCollision?.(player, v);
         }
       }
