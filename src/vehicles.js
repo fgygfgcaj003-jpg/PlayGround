@@ -718,7 +718,7 @@ export class VehicleManager {
       this.spawn(pick(types), s.x, s.z, s.heading, { color: randomVehicleColor(pick(types)) });
     }
     // player starting car (owned)
-    this.startCar = this.spawn('race', 4, 36, Math.PI, { color: 0xd9b23a, owned: true, name: 'Velocity GT' });
+    this.startCar = this.spawn('fastTank', 4, 36, Math.PI, { color: 0x4b5638, owned: true, name: 'Nova Riptide', service: 'army' });
     // special services
     const police1 = this.spawn('police', 132, 44, Math.PI / 2, { service: 'police', color: 0xe8edf0 });
     const police2 = this.spawn('police', 132, 58, -Math.PI / 2, { service: 'police' });
@@ -733,10 +733,7 @@ export class VehicleManager {
       this.spawn('boat', 345, 530, Math.PI, { y: .25, color: 0x2f6e8f }),
     ];
     this.supercars = [
-      this.spawn('super', 30, 158, Math.PI / 2, { color: 0xe4c44a }),
-      this.spawn('super', 36, 166, Math.PI / 2, { color: 0x1c1c22 }),
-      this.spawn('sports', 24, 170, Math.PI / 2, { color: 0xb23434 }),
-      this.spawn('race', 18, 176, Math.PI / 2, { color: 0xd9b23a, name: 'Velocity GT' }),
+      this.spawn('fastTank', 30, 158, Math.PI / 2, { color: 0x4b5638, name: 'Nova Riptide', service: 'army' }),
     ];
     this.bus = this.spawn('bus', 96, 340, 0, { color: 0x2c6f88 });
     this.construction = this.spawn('construction', -300, -300, Math.PI / 2, { color: 0xd6a51f });
