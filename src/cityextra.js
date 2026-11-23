@@ -2270,20 +2270,33 @@ function makeCirclingHelicopter(model, cx, cz, radius, height, speed, lightColor
 
 function buildAirliner() {
   const g = new THREE.Group();
-  const white = new THREE.MeshStandardMaterial({ color: 0xe9edf0, roughness: .35, metalness: .25 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xe9edf0, roughness: .3, metalness: .2 });
   const blue = new THREE.MeshStandardMaterial({ color: 0x1b5d8a, roughness: .4 });
-  const fus = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 30, 14), white);
+  const darkMetal = new THREE.MeshStandardMaterial({ color: 0x2a2f35, roughness: .5, metalness: .7 });
+  const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf4f7f9, roughness: .25, metalness: .15 });
+  // fuselage
+  const fus = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 30, 18), white);
   fus.rotation.x = Math.PI / 2; fus.position.y = 2.8; g.add(fus);
-  const nose = new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), white); nose.position.set(0, 2.8, 15); g.add(nose);
+  // white stripes along the fuselage
+  const stripeF = new THREE.Mesh(new THREE.CylinderGeometry(2.26, 2.26, 14, 18), whiteMat);
+  stripeF.rotation.x = Math.PI / 2; stripeF.position.set(0, 2.8, 7); g.add(stripeF);
+  const stripeA = new THREE.Mesh(new THREE.CylinderGeometry(2.26, 2.26, 12, 18), whiteMat);
+  stripeA.rotation.x = Math.PI / 2; stripeA.position.set(0, 2.8, -8); g.add(stripeA);
+  // nose + tail
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(2.2, 4, 14), white); nose.rotation.x = Math.PI / 2; nose.position.set(0, 2.8, 17); g.add(nose);
   const tail = new THREE.Mesh(new THREE.ConeGeometry(2.1, 5, 12), white); tail.rotation.x = Math.PI / 2; tail.position.set(0, 2.8, -17); g.add(tail);
-  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(2.23, 2.23, 22, 14), blue); stripe.rotation.x = Math.PI / 2; stripe.position.y = 2.6; g.add(stripe);
+  // wings, horizontal stabilizer, white wingtips
   const wing = new THREE.Mesh(new THREE.BoxGeometry(38, .4, 6), white); wing.position.set(0, 2.7, 1); g.add(wing);
-  const fin = new THREE.Mesh(new THREE.BoxGeometry(.4, 6, 5), white); fin.position.set(0, 6, -15); g.add(fin);
-  const eng = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 4, 10), blue); eng.rotation.x = Math.PI / 2; eng.position.set(-9, 2.1, 1); g.add(eng);
-  const eng2 = eng.clone(); eng2.position.x = 9; g.add(eng2);
-  for (let i = 0; i < 14; i++) {
-    const w = new THREE.Mesh(new THREE.BoxGeometry(.35, .45, .35), new THREE.MeshBasicMaterial({ color: 0x9fd6e8 }));
-    w.position.set(1, 3.1, 12 - i * 1.7); g.add(w);
+  const wingTipL = new THREE.Mesh(new THREE.BoxGeometry(7, .55, 6.4, 2), whiteMat); wingTipL.position.set(-22.5, 2.75, 1); g.add(wingTipL);
+  const wingTipR = new THREE.Mesh(new THREE.BoxGeometry(7, .55, 6.4, 2), whiteMat); wingTipR.position.set(22.5, 2.75, 1); g.add(wingTipR);
+  const hstab = new THREE.Mesh(new THREE.BoxGeometry(16, .22, 4, 1), white); hstab.position.set(0, 2.6, -12); g.add(hstab);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(.4, 6, 5, 2), white); fin.position.set(0, 6, -15); g.add(fin);
+  // engines with pods, spinners and props
+  for (const s of [-1, 1]) {
+    const eng = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 5, 10), blue); eng.rotation.x = Math.PI / 2; eng.position.set(s * 9, 2.1, 1); g.add(eng);
+    const pod = new THREE.Mesh(new THREE.SphereGeometry(2.0, 12, 10), white); pod.position.set(s * 9, 2.4, 1); g.add(pod);
+    const spinner = new THREE.Mesh(new THREE.CylinderGeometry(.7, .7, 1.4, 8), darkMetal); spinner.rotation.x = Math.PI / 2; spinner.position.set(s * 9, 1.95, 1.8); g.add(spinner);
+    const prop = new THREE.Mesh(new THREE.BoxGeometry(.35, .09, 2.8, 2), darkMetal); prop.position.set(s * 9, 1.95, 2.9); g.add(prop);
   }
   return g;
 }

@@ -704,6 +704,7 @@ export class VehicleManager {
       this.spawn('super', 30, 158, Math.PI / 2, { color: 0xe4c44a }),
       this.spawn('super', 36, 166, Math.PI / 2, { color: 0x1c1c22 }),
       this.spawn('sports', 24, 170, Math.PI / 2, { color: 0xb23434 }),
+      this.spawn('race', 18, 176, Math.PI / 2, { color: 0xd9b23a, name: 'Velocity GT' }),
     ];
     this.bus = this.spawn('bus', 96, 340, 0, { color: 0x2c6f88 });
     this.construction = this.spawn('construction', -300, -300, Math.PI / 2, { color: 0xd6a51f });
