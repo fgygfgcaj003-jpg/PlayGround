@@ -553,6 +553,9 @@ export function buildIslands(city, rng) {
     [-34, 1062, .2], [110, 1062, -.2], [-40, 1176, .3], [118, 1176, -.32],
   ];
   for (let i = 0; i < houses.length; i++) {
+    const hz = houses[i][1];
+    const nearRail = [-320, -325.2, -331.6].some(tz => Math.abs(hz - tz) < 30);
+    if (nearRail) continue; // railway corridor stays clear of houses
     addCottage(city, houses[i][0], houses[i][1], houses[i][2], houseColors[i % houseColors.length]);
   }
   for (let i = 0; i < 64; i++) {
@@ -821,7 +824,7 @@ function addMilitaryRail(city) {
   buffer.position.set(x, 1.0, 1008); root.add(buffer);
   city.addPOI('train', 'Fort Nova Military Rail', x + 7, 964, 12, { icon: 'transit', station: 0 });
 
-  const train = buildArmyTrain();
+  const train = buildArmyTrain(true);
   train.position.set(x, .42, 392);
   train.rotation.y = 0;
   root.add(train);
@@ -846,14 +849,14 @@ function addMilitaryRail(city) {
   };
 }
 
-function buildArmyTrain() {
+function buildArmyTrain(locoOnly = false) {
   const g = new THREE.Group();
   const olive = new THREE.MeshStandardMaterial({ color: 0x4e5737, roughness: .78, metalness: .2 });
   const dark = new THREE.MeshStandardMaterial({ color: 0x262b20, roughness: .85 });
   const glass = new THREE.MeshStandardMaterial({ color: 0x1b3034, roughness: .12, metalness: .55 });
   const wheels = [];
   const cars = [];
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < (locoOnly ? 1 : 3); i++) {
     const car = new THREE.Group();
     const body = new THREE.Mesh(new THREE.BoxGeometry(2.9, 2.4, 12), olive); body.position.y = 1.85; body.castShadow = true; car.add(body);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(2.6, .22, 11.6), dark); roof.position.y = 3.16; car.add(roof);
@@ -882,7 +885,7 @@ function buildArmyTrain() {
   }
   g.userData.wheels = wheels;
   g.userData.cars = cars;
-  g.userData.trainLength = 2 * 13.4 + 12;
+  g.userData.trainLength = locoOnly ? 12 : 2 * 13.4 + 12;
   return g;
 }
 
@@ -1221,11 +1224,11 @@ export function buildTransit(city, rng) {
   // own running line; the express only changes tracks through dispatch.
   const commuterLiveries = ['nova', 'coast', 'metro', 'heritage'];
   const commuterLivery = commuterLiveries[Math.floor(rng() * commuterLiveries.length) % commuterLiveries.length];
-  const commuter = buildCommuterTrain(commuterLivery);
+  const commuter = buildCommuterTrain(commuterLivery, true);
   commuter.position.set(-420, railY + .3, railZ);
   commuter.rotation.y = Math.PI / 2;
   root.add(commuter);
-  const express = buildCommuterTrain('express');
+  const express = buildCommuterTrain('express', true);
   express.position.set(320, railY + .3, track2Z);
   express.rotation.y = -Math.PI / 2;
   root.add(express);
@@ -1244,11 +1247,8 @@ export function buildTransit(city, rng) {
     progress: 280, speed: 22, maxSpeed: 22, name: 'NOVA EXPRESS',
     route: 'Bay Express · Track 2', express: true,
   });
-  if (city.rail) city.rail.group.userData.trainLength = 70;
-  if (city.rail2) city.rail2.group.userData.trainLength = 70;
-
   // freight service on the dedicated siding
-  const freight = buildFreightTrain(rng() > .5 ? 'tanker' : 'boxcar');
+  const freight = buildFreightTrain(rng() > .5 ? 'tanker' : 'boxcar', true);
   freight.position.set(520, railY + .3, track3Z);
   freight.rotation.y = -Math.PI / 2;
   root.add(freight);
@@ -1402,7 +1402,7 @@ function makeCommuterService(city, group, opts) {
     speed: opts.speed, progress: opts.progress, length: 1200, dwell: 0,
     lineName: opts.name, routeName: opts.route,
     stations: opts.stations, auto: true, currentStation: -1,
-    trainLength: 70, departCool: 0, dir: opts.dir, origin: opts.origin,
+    trainLength: group.userData?.trainLength || 70, departCool: 0, dir: opts.dir, origin: opts.origin,
     track: opts.track, z: opts.z, z1: opts.z1 ?? opts.z, z2: opts.z2 ?? opts.z - 5.2, maxSpeed: opts.maxSpeed,
     express: !!opts.express, doorOpen: false, hitCooldown: 0, collisionCool: 0,
     blocked: false, blockTimer: 0, creeping: false, creepTimer: 0,
@@ -1786,7 +1786,7 @@ function buildMonorailTrain() {
   return g;
 }
 
-function buildCommuterTrain(livery = 'nova') {
+function buildCommuterTrain(livery = 'nova', locoOnly = false) {
   const g = new THREE.Group();
   const express = livery === 'express';
   const metro = livery === 'metro';
@@ -1811,7 +1811,7 @@ function buildCommuterTrain(livery = 'nova') {
   const cars = [];
   const carLen = metro ? 13.2 : heritage ? 14.4 : 16;
   const gap = metro ? 1.4 : 2.1;
-  const carCount = metro ? 2 : express ? 4 : 3;
+  const carCount = locoOnly ? 1 : (metro ? 2 : express ? 4 : 3);
 
   const addBogie = (car, z) => {
     const truck = new THREE.Mesh(new THREE.BoxGeometry(2.0, .5, 2.9), darkMat); truck.position.set(0, .62, z); car.add(truck);
@@ -1912,13 +1912,13 @@ function buildCommuterTrain(livery = 'nova') {
 
   // pantograph on the second car
   const panto = new THREE.Group();
-  panto.position.set(0, 4.45, -(carLen + gap) + 2.2);
+  panto.position.set(0, 4.45, locoOnly ? 0 : -(carLen + gap) + 2.2);
   const ins1 = new THREE.Mesh(new THREE.CylinderGeometry(.12, .16, .26, 8), darkMat); ins1.position.set(-.7, .12, 0); panto.add(ins1);
   const ins2 = ins1.clone(); ins2.position.x = .7; panto.add(ins2);
   const lowerArm = new THREE.Mesh(new THREE.BoxGeometry(.09, 1.8, .09), darkMat); lowerArm.position.set(0, .9, .4); lowerArm.rotation.x = -.5; panto.add(lowerArm);
   const upperArm = new THREE.Mesh(new THREE.BoxGeometry(.07, 1.5, .07), darkMat); upperArm.position.set(0, 2.1, 1.0); upperArm.rotation.x = .6; panto.add(upperArm);
   const collector = new THREE.Mesh(new THREE.BoxGeometry(1.5, .09, .16), new THREE.MeshStandardMaterial({ color: 0x6a7074, roughness: .4, metalness: .7 })); collector.position.set(0, 2.75, 1.42); panto.add(collector);
-  if (!metro) g.add(panto);
+  if (!metro && !locoOnly) g.add(panto);
 
   // inter-car gangways
   for (let i = 1; i < carCount; i++) {
@@ -1934,7 +1934,7 @@ function buildCommuterTrain(livery = 'nova') {
   return g;
 }
 
-function buildFreightTrain(variant = 'boxcar') {
+function buildFreightTrain(variant = 'boxcar', locoOnly = false) {
   const g = new THREE.Group();
   const tanker = variant === 'tanker';
   const bodyMat = new THREE.MeshStandardMaterial({ color: 0x4c5a62, roughness: .62, metalness: .45 });
@@ -1957,7 +1957,7 @@ function buildFreightTrain(variant = 'boxcar') {
     }
   }
   g.add(loco);
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < (locoOnly ? 0 : 4); i++) {
     const car = new THREE.Group();
     const flat = new THREE.Mesh(new THREE.BoxGeometry(3.2, .3, 15), dark); flat.position.y = 1.2; car.add(flat);
     if (tanker) {
@@ -1993,7 +1993,7 @@ function buildFreightTrain(variant = 'boxcar') {
   }
   g.userData.wheels = wheels;
   g.userData.variant = variant;
-  g.userData.trainLength = 4 * 16.4 + 12;
+  g.userData.trainLength = locoOnly ? 13 : 4 * 16.4 + 12;
   return g;
 }
 
