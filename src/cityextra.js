@@ -1459,7 +1459,10 @@ function derailCommuter(service, city) {
 }
 
 /* Physical train contact. Trains brake for obstacles, but a late arrival on
-   the tracks is still hit. Works on both X-running and Z-running lines. */
+   the tracks is still hit. Works on both X-running and Z-running lines.
+   The hit volume covers the whole consist - loco plus every wagon - taken
+   from the group's world-space bounding box, so no part of the train that is
+   actually sitting on the rails is missed. */
 function trainImpacts(service, city, dt, axis = 'x') {
   const game = city.game;
   const player = game?.player;
@@ -1468,30 +1471,30 @@ function trainImpacts(service, city, dt, axis = 'x') {
   const speed = Math.abs(service.speed || 0);
   if (speed < .9 || service.hitCooldown > 0 || service.derailed) return;
   const len = service.trainLength || service.group?.userData?.trainLength || 70;
-  const c = service.group.position;
-  const half = len * .5;
   const dir = service.dir || 1;
-  // Train meshes trail behind the group origin, so the collision box is
-  // offset rearward along the running line.
-  const cx = axis === 'x' ? c.x - dir * half : c.x;
-  const cz = axis === 'z' ? c.z - dir * half : c.z;
-  const inBox = (x, z, pad = 0) => axis === 'x'
-    ? Math.abs(z - cz) < 3.1 + pad && Math.abs(x - cx) < half + pad
-    : Math.abs(x - cx) < 3.1 + pad && Math.abs(z - cz) < half + pad;
-  const sideOf = (v, center) => v < center ? -1 : 1;
+  const c = service.group.position;
+  const box = new THREE.Box3().setFromObject(service.group);
+  const front = dir > 0 ? (axis === 'x' ? box.max.x : box.max.z) : (axis === 'x' ? box.min.x : box.min.z);
+  const rear = front - dir * len;
+  const lat = axis === 'x' ? c.z : c.x;
+  const aheadOf = (x) => { const d = (x - front) * dir; return d > 0 && d < len + 3; };
+  const sideOf = (v) => (v < lat ? -1 : 1);
   let hit = false;
 
   // player on foot
-  if (!player.riding && !player.vehicle && inBox(player.pos.x, player.pos.z, .5)) {
+  const playerAhead = aheadOf(player.pos.x);
+  const playerLat = axis === 'x' ? player.pos.z : player.pos.x;
+  if (!player.riding && !player.vehicle && playerAhead && Math.abs(playerLat - lat) < 3.1 + .5) {
     const ox = player.pos.x, oz = player.pos.z;
+    const side = sideOf(axis === 'x' ? oz : ox);
     let nx = ox, nz = oz;
-    if (axis === 'x') nz = cz + sideOf(oz, cz) * 8;
-    else nx = cx + sideOf(ox, cx) * 8;
+    if (axis === 'x') nz = lat + side * 8;
+    else nx = lat + side * 8;
     player.setPosition(nx, nz, player.groundY || .18);
     player.velocity.set((nx - ox) * 3, 0, (nz - oz) * 3);
     game.damagePlayer?.(38 + speed * 1.5, 'train');
     game.camShake = Math.max(game.camShake || 0, 1);
-    game.notify?.('You were struck by the train — stay off the tracks!', 'bad');
+    game.notify?.('You were struck by the train - stay off the tracks!', 'bad');
     game.effects?.sparksAt(ox, 1, oz, 22);
     hit = true;
   }
@@ -1500,12 +1503,13 @@ function trainImpacts(service, city, dt, axis = 'x') {
   const pv = player.vehicle;
   for (const v of [...(game.vehicles?.vehicles || [])]) {
     if (v.isAir && v.pos.y > 4) continue;
-    if (v === pv && player.riding) continue;
-    if (!inBox(v.pos.x, v.pos.z, v === pv ? 1.2 : .6)) continue;
+    const vLat = axis === 'x' ? v.pos.z : v.pos.x;
+    const vAhead = aheadOf(axis === 'x' ? v.pos.x : v.pos.z);
+    if (!vAhead || Math.abs(vLat - lat) > 3.1 + (v === pv ? 1.2 : .6)) continue;
     const isPlayer = v === pv;
-    const side = axis === 'x' ? sideOf(v.pos.z, cz) : sideOf(v.pos.x, cx);
-    if (axis === 'x') v.pos.z = cz + side * 4.5;
-    else v.pos.x = cx + side * 4.5;
+    const side = sideOf(vLat);
+    if (axis === 'x') v.pos.z = lat + side * 4.5;
+    else v.pos.x = lat + side * 4.5;
     v.velocity?.multiplyScalar(.18);
     v.knock?.set(axis === 'x' ? 0 : side * 10, axis === 'x' ? side * 10 : 0);
     v.knockTimer = 1.3;
@@ -1520,10 +1524,14 @@ function trainImpacts(service, city, dt, axis = 'x') {
 
   // pedestrians caught on the crossing
   for (const p of game.npcs?.peds || []) {
-    if (p.state === 'down' || !inBox(p.x, p.z, .35)) continue;
-    const side = axis === 'x' ? sideOf(p.z, cz) : sideOf(p.x, cx);
-    if (axis === 'x') p.z = cz + side * 5;
-    else p.x = cx + side * 5;
+    if (p.state === 'down') continue;
+    const pAlong = axis === 'x' ? p.x : p.z;
+    const pLat = axis === 'x' ? p.z : p.x;
+    const pd = Math.abs((pAlong - front) * dir);
+    if (pd > len + 2 || Math.abs(pLat - lat) > 3.1 + .35) continue;
+    const side = sideOf(pLat);
+    if (axis === 'x') p.z = lat + side * 5;
+    else p.x = lat + side * 5;
     p.state = 'down'; p.downTimer = rand(6, 10);
     p.heading = service.group.rotation.y + rand(-1, 1);
     hit = true;
@@ -1540,22 +1548,24 @@ function trainCollision(a, b, city) {
   const game = city.game;
   if (a.collisionCool > 0 || b.collisionCool > 0) return;
   if (a.derailed || b.derailed) return;
+  const aAhead = ((b.group.position.x - a.group.position.x) * (a.dir || 1)) > 0;
+  const rear = aAhead ? a : b;
+  const front = aAhead ? b : a;
   a.collisionCool = 10;
   b.collisionCool = 10;
+  a.speed = 0;
+  b.speed = 0;
+  if ('derailed' in rear) derailCommuter(rear, city);
+  a.stallTimer = 14; b.stallTimer = 14;
   const ax = a.group.position.x, bx = b.group.position.x;
   const mx = (ax + bx) * .5;
   const mz = a.z ?? a.group.position.z;
-  a.speed = 0;
-  b.speed = 0;
-  if ('derailed' in a) derailCommuter(a, city);
-  if ('derailed' in b) derailCommuter(b, city);
-  a.stallTimer = 14; b.stallTimer = 14;
   game?.effects?.explosion?.(mx, 1.4, mz);
   game?.effects?.sparksAt?.(mx, 1.2, mz, 36);
   game?.audio?.crash?.(10);
   game?.audio?.trainHorn?.();
   if (game) game.camShake = Math.max(game.camShake || 0, 1);
-  game?.notify?.('Train collision at Nova Junction — service suspended', 'bad');
+  game?.notify?.('Train collision at Nova Junction - service suspended', 'bad');
 }
 
 function updateCommuterService(service, city, dt, elapsed) {
@@ -1599,7 +1609,10 @@ function updateCommuterService(service, city, dt, elapsed) {
       const gap = dx - reach;
       if (gap < trainAhead) { trainAhead = gap; trainOther = other; }
     }
-    if (Math.abs(dx) < reach - .4) trainOverlap = Math.max(trainOverlap, reach - Math.abs(dx));
+    if (Math.abs(dx) < reach - .4) {
+      trainOverlap = Math.max(trainOverlap, reach - Math.abs(dx));
+      if (!trainOther) trainOther = other;
+    }
   }
   if (trainOverlap > .5 && s.collisionCool <= 0 && !s.derailed && trainOther) {
     trainCollision(s, trainOther, city);
