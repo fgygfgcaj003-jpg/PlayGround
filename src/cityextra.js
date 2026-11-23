@@ -1060,7 +1060,7 @@ export function buildTransit(city, rng) {
   city.monorail = monorail;
 
   // --- ground railway (double track, freight + commuter) ---
-  const railY = .1, railZ = -446, track2Z = railZ - 5.2, track3Z = track2Z - 6.4;
+  const railY = .1, railZ = -320, track2Z = railZ - 5.2, track3Z = track2Z - 6.4;
   const railSteel = new THREE.MeshStandardMaterial({ color: 0xa8afb4, roughness: .26, metalness: .85 });
   const ballast = new THREE.Mesh(new THREE.BoxGeometry(1200, .28, 15), new THREE.MeshStandardMaterial({ color: 0x3d3a34, roughness: 1 }));
   ballast.position.set(0, .05, (railZ + track2Z) / 2); root.add(ballast);
@@ -1173,26 +1173,26 @@ export function buildTransit(city, rng) {
   // station
   const st = new THREE.Group();
   const platform = new THREE.Mesh(new THREE.BoxGeometry(92, 1.1, 8), city.concreteMat);
-  platform.position.set(170, .55, -438); st.add(platform);
+  platform.position.set(170, .55, -312); st.add(platform);
   const tactile = new THREE.Mesh(new THREE.BoxGeometry(90, .08, .7), new THREE.MeshStandardMaterial({ color: 0xd7b23f, roughness: .8 }));
-  tactile.position.set(170, 1.13, -441.2); st.add(tactile);
+  tactile.position.set(170, 1.13, -315.2); st.add(tactile);
   const roof = new THREE.Mesh(new THREE.BoxGeometry(82, .3, 9.5), new THREE.MeshStandardMaterial({ color: 0x39424a, roughness: .6, metalness: .3 }));
-  roof.position.set(170, 5.3, -438); st.add(roof);
+  roof.position.set(170, 5.3, -312); st.add(roof);
   const canopyGlass = new THREE.Mesh(new THREE.BoxGeometry(80, .08, 8.8), new THREE.MeshStandardMaterial({ color: 0x8fc7dc, transparent: true, opacity: .28, roughness: .05, metalness: .4 }));
-  canopyGlass.position.set(170, 5.08, -438); st.add(canopyGlass);
+  canopyGlass.position.set(170, 5.08, -312); st.add(canopyGlass);
   for (let x = -38; x <= 38; x += 12) {
     const post = new THREE.Mesh(new THREE.BoxGeometry(.2, 4.8, .2), city.metalMat);
-    post.position.set(170 + x, 2.7, -438); st.add(post);
+    post.position.set(170 + x, 2.7, -312); st.add(post);
     if (x % 24 === 0) {
-      const bench = new THREE.Mesh(new THREE.BoxGeometry(5.6, .16, .7), city.woodMat); bench.position.set(170 + x, 1.25, -436.4); st.add(bench);
+      const bench = new THREE.Mesh(new THREE.BoxGeometry(5.6, .16, .7), city.woodMat); bench.position.set(170 + x, 1.25, -310.4); st.add(bench);
     }
   }
   const stationSign = new THREE.Mesh(new THREE.PlaneGeometry(12, 3), new THREE.MeshBasicMaterial({ map: signTexture('NOVA CENTRAL', '#0b1b2b', '#cfefff', 'RAIL TERMINAL'), transparent: true }));
-  stationSign.position.set(170, 3.7, -434); st.add(stationSign);
+  stationSign.position.set(170, 3.7, -308); st.add(stationSign);
   const stairs = new THREE.Mesh(new THREE.BoxGeometry(9, 1.2, 6), city.concreteMat);
-  stairs.position.set(170, .45, -430); st.add(stairs);
+  stairs.position.set(170, .45, -304); st.add(stairs);
   root.add(st);
-  city.addPOI('train', 'Nova Central Rail', 170, -430, 16, { icon: 'transit', station: 1 });
+  city.addPOI('train', 'Nova Central Rail', 170, -304, 16, { icon: 'transit', station: 1 });
 
   // smaller stops west and east along the same line
   const commuterStops = [
@@ -1202,19 +1202,19 @@ export function buildTransit(city, rng) {
   for (const s of commuterStops) {
     const stop = new THREE.Group();
     const p = new THREE.Mesh(new THREE.BoxGeometry(64, 1.05, 7), city.concreteMat);
-    p.position.set(s.x, .52, -438); stop.add(p);
+    p.position.set(s.x, .52, -312); stop.add(p);
     const t = new THREE.Mesh(new THREE.BoxGeometry(62, .07, .6), new THREE.MeshStandardMaterial({ color: 0xd7b23f, roughness: .8 }));
-    t.position.set(s.x, 1.08, -441); stop.add(t);
+    t.position.set(s.x, 1.08, -315.2); stop.add(t);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(58, .25, 8), new THREE.MeshStandardMaterial({ color: 0x39424a, roughness: .6, metalness: .3 }));
-    roof.position.set(s.x, 4.5, -438); stop.add(roof);
+    roof.position.set(s.x, 4.5, -312); stop.add(roof);
     for (let x = -26; x <= 26; x += 13) {
       const post = new THREE.Mesh(new THREE.BoxGeometry(.18, 4.1, .18), city.metalMat);
-      post.position.set(s.x + x, 2.3, -438); stop.add(post);
+      post.position.set(s.x + x, 2.3, -312); stop.add(post);
     }
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(9, 2.4), new THREE.MeshBasicMaterial({ map: signTexture(s.name, '#0b1b2b', '#cfefff', s.sub), transparent: true }));
-    sign.position.set(s.x, 3.2, -434); stop.add(sign);
+    sign.position.set(s.x, 3.2, -308); stop.add(sign);
     root.add(stop);
-    city.addPOI('train', `${s.name[0]}${s.name.slice(1).toLowerCase()} Rail`, s.x, -429, 13, { icon: 'transit', station: s === commuterStops[0] ? 0 : 2 });
+    city.addPOI('train', `${s.name[0]}${s.name.slice(1).toLowerCase()} Rail`, s.x, -303, 13, { icon: 'transit', station: s === commuterStops[0] ? 0 : 2 });
   }
 
   // Two commuter services share the double-track corridor. Each keeps its
@@ -1230,9 +1230,9 @@ export function buildTransit(city, rng) {
   express.rotation.y = -Math.PI / 2;
   root.add(express);
   const railStations = [
-    { x: -260, z: -430, name: 'Westbrook' },
-    { x: 170, z: -430, name: 'Nova Central' },
-    { x: 430, z: -430, name: 'Eastgate' },
+    { x: -260, z: -304, name: 'Westbrook' },
+    { x: 170, z: -304, name: 'Nova Central' },
+    { x: 430, z: -304, name: 'Eastgate' },
   ];
   city.rail = makeCommuterService(city, commuter, {
     stations: railStations, dir: 1, origin: -600, track: 1, z: railZ, z1: railZ, z2: track2Z,
@@ -1482,7 +1482,8 @@ function trainImpacts(service, city, dt, axis = 'x') {
   let hit = false;
 
   // player on foot
-  const playerAhead = aheadOf(player.pos.x);
+  const playerAlong = axis === 'x' ? player.pos.x : player.pos.z;
+  const playerAhead = aheadOf(playerAlong);
   const playerLat = axis === 'x' ? player.pos.z : player.pos.x;
   if (!player.riding && !player.vehicle && playerAhead && Math.abs(playerLat - lat) < 3.1 + .5) {
     const ox = player.pos.x, oz = player.pos.z;
