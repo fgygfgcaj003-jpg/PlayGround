@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#1a1710" />
+<title>ОКОПЫ 1916 — Западный фронт</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%231a1710'/%3E%3Cpath d='M4 22h24v4H4z' fill='%23b09a6b'/%3E%3Cpath d='M9 22V12l7-4 7 4v10' fill='none' stroke='%23d0bd8a' stroke-width='2'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./styles.css" />
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="fx-vignette"></div>
+<div id="fx-grain"></div>
+
+<!-- ================= HUD ================= -->
+<div id="hud">
+  <div id="hud-top-left">
+    <div class="sector">БРИТАНСКИЙ СЕКТОР · СОММА</div>
+    <div class="objective">УДЕРЖИВАТЬ ЛИНИЮ ОКОПОВ</div>
+    <div id="score" class="score">0 : 0</div>
+  </div>
+
+  <div id="compass"><span class="compass-dir">С</span><span class="compass-deg">0°</span></div>
+
+  <div id="minimap-wrap">
+    <canvas id="minimap" width="190" height="190"></canvas>
+    <div class="map-label">СЕКТОР 14-B</div>
+  </div>
+
+  <div id="killfeed"></div>
+
+  <div id="health-panel">
+    <div class="hp-icon">✚</div>
+    <div class="hp-main">
+      <div class="hp-row"><span>ЗДОРОВЬЕ</span><b id="health-text">100</b></div>
+      <div class="hp-bar"><div id="health-fill"></div></div>
+    </div>
+  </div>
+
+  <div id="weapon-panel">
+    <div id="weapon-name">SMLE Mk III</div>
+    <div id="ammo">10 / 90</div>
+  </div>
+
+  <div id="crosshair">
+    <div class="ch-dot"></div>
+    <div class="ch-line top"></div>
+    <div class="ch-line bottom"></div>
+    <div class="ch-line left"></div>
+    <div class="ch-line right"></div>
+  </div>
+  <div id="hitmarker">✕</div>
+
+  <div id="prompt"></div>
+  <div id="message"></div>
+  <div id="vehicle-panel"></div>
+  <div id="damage-flash"></div>
+
+  <div id="death" class="hidden">
+    <div class="death-title">ВЫ УБИТЫ</div>
+    <div id="death-reason" class="death-sub">Прямое попадание</div>
+    <div class="death-line"></div>
+    <div class="death-respawn">ВОЗРОЖДЕНИЕ ЧЕРЕЗ <span>4</span> СЕК.</div>
+  </div>
+
+  <div id="pause" class="hidden">
+    <div class="pause-card">
+      <div class="pause-title">ПАУЗА</div>
+      <p>Курсор освобождён. Нажмите, чтобы продолжить бой.</p>
+      <button id="resume-btn">ПРОДОЛЖИТЬ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= TOUCH ================= -->
+<div id="touch-controls" class="hidden">
+  <div id="joy"><div id="joy-knob"></div></div>
+  <div id="touch-look"></div>
+  <div id="touch-buttons">
+    <button id="btn-use" class="tbtn small">E</button>
+    <button id="btn-reload" class="tbtn small">R</button>
+    <button id="btn-jump" class="tbtn small">↑</button>
+    <button id="btn-fire" class="tbtn fire">ОГОНЬ</button>
+  </div>
+</div>
+
+<!-- ================= MENU ================= -->
+<div id="menu">
+  <div class="menu-scrim"></div>
+  <div class="menu-content">
+    <div class="menu-left">
+      <div class="menu-kicker">ЗАПАДНЫЙ ФРОНТ · 1916</div>
+      <h1>ОКОПЫ<span>1916</span></h1>
+      <div class="menu-rule"></div>
+      <p class="menu-desc">
+        Тысяча двести метров изрытой воронками земли. Две линии окопов, колючая проволока,
+        британские и германские позиции. Mark I идёт через нейтральную полосу, Sopwith Camel
+        поднимается с полевого аэродрома. Держи линию — или пади в грязь.
+      </p>
+      <div class="chips">
+        <span>MARK I · ЭКИПАЖ 5</span>
+        <span>SOPWITH CAMEL</span>
+        <span>РЕГДОЛЛ</span>
+        <span>1,2 КМ ФРОНТ</span>
+      </div>
+      <button id="start-btn">В БОЙ</button>
+      <div id="loading">ПОДГОТОВКА ПОЗИЦИЙ…</div>
+      <div class="menu-foot">ПРОЦЕДУРНАЯ 3D-ГРАФИКА · THREE.JS · БЕЗ ВНЕШНИХ АССЕТОВ</div>
+    </div>
+    <div class="menu-right">
+      <div class="stamp">
+        <div class="stamp-top">ВОЕННО-ПОЛЕВОЕ</div>
+        <div class="stamp-mid">СООБЩЕНИЕ</div>
+        <div class="stamp-sub">СЕКТОР 14-B</div>
+      </div>
+      <div class="controls-card">
+        <div class="controls-title">УПРАВЛЕНИЕ</div>
+        <div class="ctrl"><kbd>W A S D</kbd><span>движение</span></div>
+        <div class="ctrl"><kbd>МЫШЬ</kbd><span>обзор / прицел</span></div>
+        <div class="ctrl"><kbd>ЛКМ</kbd><span>огонь</span></div>
+        <div class="ctrl"><kbd>ПКМ</kbd><span>прицеливание</span></div>
+        <div class="ctrl"><kbd>R</kbd><span>перезарядка</span></div>
+        <div class="ctrl"><kbd>E</kbd><span>танк · самолёт · пулемёт</span></div>
+        <div class="ctrl"><kbd>SHIFT</kbd><span>бег</span></div>
+        <div class="ctrl"><kbd>SPACE</kbd><span>прыжок</span></div>
+        <div class="ctrl"><kbd>C</kbd><span>присесть</span></div>
+        <div class="controls-title second">В ВОЗДУХЕ</div>
+        <div class="ctrl"><kbd>W / S</kbd><span>газ</span></div>
+        <div class="ctrl"><kbd>МЫШЬ</kbd><span>крен / тангаж</span></div>
+        <div class="ctrl"><kbd>A / D</kbd><span>руль поворота</span></div>
+        <div class="ctrl"><kbd>E</kbd><span>парашют</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
