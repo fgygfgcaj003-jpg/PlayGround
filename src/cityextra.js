@@ -1545,6 +1545,18 @@ function trainImpacts(service, city, dt, axis = 'x') {
   }
 }
 
+/* Strong impact: individual wagons of the consist react as their own
+   objects (flip on the rolling axis) while the whole train is held. */
+function flipWagons(service) {
+  const cars = service.group?.userData?.cars;
+  if (!Array.isArray(cars) || cars.length < 2) return;
+  for (const car of cars) {
+    const flip = 0.4 + Math.random() * 0.8;
+    car.rotation.x = Math.max(car.rotation.x, flip);
+    car.rotation.z = Math.max(car.rotation.z, flip * .3);
+  }
+}
+
 function trainCollision(a, b, city) {
   const game = city.game;
   if (a.collisionCool > 0 || b.collisionCool > 0) return;
@@ -1557,6 +1569,8 @@ function trainCollision(a, b, city) {
   a.speed = 0;
   b.speed = 0;
   if ('derailed' in rear) derailCommuter(rear, city);
+  flipWagons(a);
+  flipWagons(b);
   a.stallTimer = 14; b.stallTimer = 14;
   const ax = a.group.position.x, bx = b.group.position.x;
   const mx = (ax + bx) * .5;
