@@ -686,7 +686,7 @@ export class VehicleManager {
       this.spawn(pick(types), s.x, s.z, s.heading, { color: randomVehicleColor(pick(types)) });
     }
     // player starting car (owned)
-    this.startCar = this.spawn('sedan', 4, 36, Math.PI, { color: 0x2b4a6f, owned: true, name: 'Your Sable' });
+    this.startCar = this.spawn('race', 4, 36, Math.PI, { color: 0xd9b23a, owned: true, name: 'Velocity GT' });
     // special services
     const police1 = this.spawn('police', 132, 44, Math.PI / 2, { service: 'police', color: 0xe8edf0 });
     const police2 = this.spawn('police', 132, 58, -Math.PI / 2, { service: 'police' });
