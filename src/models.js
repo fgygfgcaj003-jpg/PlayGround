@@ -105,6 +105,10 @@ export const VEHICLE_TYPES = {
     name: 'Nova MBT', klass: 'TANK', len: 8.8, wid: 3.7, height: 2.9, wheelbase: 5.2, wheelR: 0.52, wheelW: 0.5,
     maxSpeed: 17, accel: 3.4, brake: 13, grip: 9.8, mass: 42000, fuel: 420, price: 0, seats: 2, color: 0x4b5638, isTank: true,
   },
+  fastTank: {
+    name: 'Nova Riptide', klass: 'TANK', len: 8.8, wid: 3.7, height: 2.9, wheelbase: 5.2, wheelR: 0.52, wheelW: 0.5,
+    maxSpeed: 90, accel: 19, brake: 34, grip: 13.5, mass: 5200, fuel: 420, price: 0, seats: 2, color: 0x4b5638, isTank: true,
+  },
   construction: {
     name: 'Vulcan 8M', klass: 'CONSTRUCTION', len: 8.6, wid: 2.55, height: 3.25, wheelbase: 4.6, wheelR: 0.58, wheelW: 0.4,
     maxSpeed: 21, accel: 3.2, brake: 10, grip: 7.4, mass: 18500, fuel: 240, price: 195000, seats: 2,
@@ -676,7 +680,7 @@ export function buildVehicleModel(type, color, opts = {}) {
   let v;
   if (['bus'].includes(type)) v = buildBus(color);
   else if (['truck', 'construction', 'fire', 'ambulance', 'army'].includes(type)) v = buildTruck(type, color);
-  else if (type === 'tank') v = buildTank(color);
+  else if (['tank', 'fastTank'].includes(type)) v = buildTank(color);
   else if (type === 'motorcycle') v = buildMotorcycle(color);
   else if (type === 'boat') v = buildBoat(color);
   else if (type === 'helicopter') v = buildHelicopter(color);

@@ -324,6 +324,13 @@ export class Vehicle {
       const aim = normAngle(this.game.player.cameraYaw - this.heading);
       const delta = normAngle(aim - this.turret.rotation.y);
       this.turret.rotation.y = normAngle(this.turret.rotation.y + clamp(delta, -dt * 1.9, dt * 1.9));
+      const canFire = (this.isPlayer || this.service === 'army') && this.engineOn && this.fuel > 0.1 && this.health > 0;
+      if (canFire) {
+        if ((this.turret.lastFire || 0) + 400 < performance.now()) {
+          this.turret.lastFire = performance.now();
+          this.fireTurret();
+        }
+      }
     }
     this.lastSpeed = vf;
     this.speed = vf;
@@ -515,6 +522,29 @@ export class Vehicle {
     }
   }
 
+  fireTurret() {
+    const t = this.turret;
+    const aim = normAngle(this.game.player.cameraYaw - this.heading);
+    const dir = new THREE.Vector2(Math.sin(aim), Math.cos(aim));
+    const len = Math.hypot(dir.x, dir.y) || 1;
+    dir.multiplyScalar(1 / len);
+    const origin = new THREE.Vector3();
+    t.getWorldPosition(origin);
+    const ray = new THREE.Raycaster();
+    ray.set(origin, dir);
+    let best = null, bestDist = Infinity;
+    for (const v of this.game.vehicles?.vehicles || []) {
+      if (v === this || v.dead || v.mode === 'traffic') continue;
+      const hit = ray.intersectObject(v.group, true);
+      if (hit && hit.distance < bestDist) { bestDist = hit.distance; best = v; }
+    }
+    if (best && bestDist < 70) {
+      best.applyDamage(18, { x: best.pos.x, y: best.pos.y + .8, z: best.pos.z });
+      this.game.effects?.sparksAt?.(best.pos.x, best.pos.y + .8, best.pos.z, 8);
+    }
+    return bestDist;
+  }
+
   applyDamage(amount, hitPos = null) {
     this.health = clamp(this.health - amount, 0, 100);
     this.damageFlash = 1;
@@ -529,7 +559,8 @@ export class Vehicle {
     if (this.health <= 0 && !this.dead) {
       this.dead = true;
       this.engineOn = false;
-      this.game.notify?.('Vehicle disabled — engine failure', 'bad');
+      this.game.effects?.explosion?.(this.pos.x, this.pos.y + .8, this.pos.z, 0.9);
+      this.game.notify?.('Vehicle destroyed — catastrophic failure', 'bad');
     }
     if (this.serviceLights) this.serviceLights.group.visible = this.health > 30;
   }
@@ -651,11 +682,12 @@ export class VehicleManager {
       { type: 'tank', x: base.x - 6, z: base.z + 34, heading: Math.PI / 2, name: 'Nova MBT' },
       { type: 'army', x: base.x + 30, z: base.z + 54, heading: Math.PI / 2, name: 'Atlas Command' },
       { type: 'army', x: base.x + 44, z: base.z + 54, heading: Math.PI / 2, name: 'Atlas Command' },
+      { type: 'fastTank', x: base.x + 30, z: base.z - 20, heading: Math.PI / 2, name: 'Nova Riptide' },
     ];
     this.militaryVehicles = [];
     for (const u of units) {
       const v = this.spawn(u.type, u.x, u.z, u.heading, {
-        service: 'army', color: u.type === 'tank' ? 0x4b5638 : 0x4d5739, name: u.name,
+        service: 'army', color: ['tank', 'fastTank'].includes(u.type) ? 0x4b5638 : 0x4d5739, name: u.name,
       });
       v.mode = 'parked';
       this.militaryVehicles.push(v);
