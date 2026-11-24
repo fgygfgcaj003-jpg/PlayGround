@@ -475,12 +475,27 @@ export function buildA7V() {
   // cannon at front
   addCyl(group, 0.11, 0.14, 1.2, 10, PALETTE.gunmetal, 3.6, 2.1, 0, 0, 0, Math.PI / 2, mats.metal);
   addBox(group, 0.8, 0.9, 1.1, 0x6a6a55, 3.05, 2.05, 0, 0, 0, 0, mats.hull);
-  // tracks
+  // tracks with animated road wheels so movement is legible
+  const wheels = [];
+  const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10);
+  wheelGeo.rotateX(Math.PI / 2); // axle along Z
+  const wheelMat = toonMat(0x35322a);
+  const hubMat = toonMat(0x55503d);
   for (const side of [1, -1]) {
     for (let i = 0; i < 12; i++) {
       addBox(group, 0.45, 0.5, 0.22, 0x3d3a30, -2.9 + i * 0.52, 0.5, side * 1.95);
     }
     addBox(group, 6.3, 0.7, 0.3, 0x45422f, 0, 0.55, side * 1.95);
+    for (let i = 0; i < 5; i++) {
+      const w = new THREE.Mesh(wheelGeo, wheelMat);
+      w.position.set(-2.2 + i * 1.1, 0.52, side * 2.02);
+      w.castShadow = true;
+      group.add(w);
+      wheels.push(w);
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.27, 8).rotateX(Math.PI / 2), hubMat);
+      hub.position.copy(w.position);
+      group.add(hub);
+    }
   }
   // exhausts
   addCyl(group, 0.1, 0.1, 0.8, 8, PALETTE.metalDark, -2.4, 3.2, 0.7, 0, 0, 0.2, mats.metal);
@@ -491,7 +506,7 @@ export function buildA7V() {
     addBox(group, 0.7, 0.14, 0.03, 0x2a2a24, 0.6, 1.9, side * 1.72, 0, 0, 0, crossMat);
     addBox(group, 0.14, 0.7, 0.03, 0x2a2a24, 0.6, 1.9, side * 1.72, 0, 0, 0, crossMat);
   }
-  group.userData = { type: 'a7v', tracks: [] };
+  group.userData = { type: 'a7v', tracks: [], wheels };
   return group;
 }
 

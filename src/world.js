@@ -24,6 +24,11 @@ export const WORLD = {
 export const BRITISH = -1;
 export const GERMAN = 1;
 
+const SKY_DAY = { top: new THREE.Color(0x5e86ad), mid: new THREE.Color(0xa9bcc4), bottom: new THREE.Color(0xd8c9a3), fog: new THREE.Color(0xbfb69b), sun: new THREE.Color(0xfff0cf) };
+const SKY_DAWN = { top: new THREE.Color(0x3f4d6d), mid: new THREE.Color(0xc08a6f), bottom: new THREE.Color(0xf0bc84), fog: new THREE.Color(0xc9a583), sun: new THREE.Color(0xffb066) };
+const SKY_NIGHT = { top: new THREE.Color(0x050812), mid: new THREE.Color(0x0d1422), bottom: new THREE.Color(0x18202e), fog: new THREE.Color(0x141a26), sun: new THREE.Color(0x8899bb) };
+const _colA = new THREE.Color(), _colB = new THREE.Color(), _colC = new THREE.Color();
+
 /* ------------------------------------------------------------------ *
  *  Terrain shaping
  * ------------------------------------------------------------------ */
@@ -96,25 +101,14 @@ function channelCarve(x, z) {
       }
     }
   }
-  // communication trenches
-  for (const side of [-1, 1]) {
-    for (const cx of [-420, -260, -80, 120, 300, 460]) {
-      const xd = Math.abs(x - cx - 4 * Math.sin(z * 0.04 + side));
-      if (xd < 2.0) {
-        const zmin = side > 0 ? WORLD.frontZ - 4 : -205;
-        const zmax = side > 0 ? 205 : -WORLD.frontZ + 4;
-        const inside = side > 0 ? (z > zmin && z < zmax) : (z < zmax && z > zmin);
-        if (inside) {
-          const f = 1 - Math.pow(clamp((xd - 0.55) / 1.4, 0, 1), 2);
-          depth = Math.max(depth, 1.85 * f);
-        }
-      }
-    }
-  }
+  // Communication trenches used to be carved too.  They were only ~1.4 m
+  // wide, far narrower than a terrain quad, so the collision field could
+  // not represent them and soldiers dropped through the ground.  They are
+  // intentionally gone; engineers can now dig fresh traverses with a shovel.
   return { depth, parapet };
 }
 
-export function heightAt(x, z) {
+function rawHeight(x, z) {
   let h = baseHeight(x, z) + craterHeight(x, z);
   // flatten aerodrome
   const am = rectMask(x, z, WORLD.aerodrome.x, WORLD.aerodrome.z, WORLD.aerodrome.hx, WORLD.aerodrome.hz, 26);
@@ -122,6 +116,107 @@ export function heightAt(x, z) {
   const { depth, parapet } = channelCarve(x, z);
   h += -depth + parapet;
   return h;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Terrain height field.
+ *
+ *  The visible ground is a PlaneGeometry.  Sampling the analytic height
+ *  function directly made the player sink through the rendered triangles
+ *  on steep trench lips.  We bake the *exact* mesh resolution into a grid
+ *  and interpolate with the same triangle split PlaneGeometry uses, so
+ *  collision and visuals can never disagree.
+ * ------------------------------------------------------------------ */
+const TERRAIN_NX = 380, TERRAIN_NZ = 200;
+const TERRAIN_GRID = new Float32Array((TERRAIN_NX + 1) * (TERRAIN_NZ + 1));
+let terrainGridReady = false;
+
+function buildTerrainGrid() {
+  const sx = WORLD.width / TERRAIN_NX;
+  const sz = WORLD.depth / TERRAIN_NZ;
+  for (let iz = 0; iz <= TERRAIN_NZ; iz++) {
+    const z = WORLD.minZ + iz * sz;
+    for (let ix = 0; ix <= TERRAIN_NX; ix++) {
+      const x = WORLD.minX + ix * sx;
+      TERRAIN_GRID[iz * (TERRAIN_NX + 1) + ix] = rawHeight(x, z);
+    }
+  }
+  terrainGridReady = true;
+}
+buildTerrainGrid();
+
+export function heightAt(x, z) {
+  if (!terrainGridReady) return rawHeight(x, z);
+  const nx = TERRAIN_NX, nz = TERRAIN_NZ;
+  const fx = clamp((x - WORLD.minX) / WORLD.width, 0, 0.999999) * nx;
+  const fz = clamp((z - WORLD.minZ) / WORLD.depth, 0, 0.999999) * nz;
+  const ix = Math.floor(fx), iz = Math.floor(fz);
+  const u = fx - ix, v = fz - iz;
+  const i00 = iz * (nx + 1) + ix;
+  const h00 = TERRAIN_GRID[i00];
+  const h10 = TERRAIN_GRID[i00 + 1];
+  const h01 = TERRAIN_GRID[i00 + nx + 1];
+  const h11 = TERRAIN_GRID[i00 + nx + 2];
+  // match PlaneGeometry triangulation: (a,b,d) then (b,c,d)
+  if (u + v <= 1) return h00 + u * (h10 - h00) + v * (h01 - h00);
+  return h11 + (1 - u) * (h01 - h11) + (1 - v) * (h10 - h11);
+}
+
+/* Engineer shovel: deform the baked field *and* the visible mesh together. */
+export function digTrench(world, cx, cz, radius = 2.7, depth = 1.45) {
+  const geo = world?.terrainGeo;
+  const pos = geo?.attributes.position;
+  const colors = geo?.attributes.color;
+  const nx = TERRAIN_NX, nz = TERRAIN_NZ;
+  const sx = WORLD.width / nx, sz = WORLD.depth / nz;
+  const topY = heightAt(cx, cz);
+  const ix0 = Math.max(0, Math.floor((cx - radius - WORLD.minX) / sx));
+  const ix1 = Math.min(nx, Math.ceil((cx + radius - WORLD.minX) / sx));
+  const iz0 = Math.max(0, Math.floor((cz - radius - WORLD.minZ) / sz));
+  const iz1 = Math.min(nz, Math.ceil((cz + radius - WORLD.minZ) / sz));
+  const mud = new THREE.Color(0x4a3f2c);
+  for (let iz = iz0; iz <= iz1; iz++) {
+    const z = WORLD.minZ + iz * sz;
+    for (let ix = ix0; ix <= ix1; ix++) {
+      const x = WORLD.minX + ix * sx;
+      const d = Math.hypot(x - cx, z - cz);
+      if (d > radius) continue;
+      const f = 1 - (d / radius) ** 2;
+      const drop = depth * f;
+      const idx = iz * (nx + 1) + ix;
+      TERRAIN_GRID[idx] -= drop;
+      if (pos) pos.setY(idx, pos.getY(idx) - drop);
+      if (colors) {
+        colors.setXYZ(idx, mud.r, mud.g, mud.b);
+      }
+    }
+  }
+  if (pos) {
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    geo.attributes.normal.needsUpdate = true;
+    if (colors) colors.needsUpdate = true;
+  }
+  // dark hollow floor so the dug pit reads clearly even in low quality
+  const floorY = heightAt(cx, cz);
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(radius * 0.82, 18),
+    new THREE.MeshLambertMaterial({ color: 0x33291c }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(cx, floorY + 0.045, cz);
+  floor.receiveShadow = true;
+  world.group.add(floor);
+  // sandbag lip around the fresh scrape
+  const rng = mulberry32(Math.floor(cx * 71 + cz * 37) >>> 0);
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * TAU + rng() * 0.2;
+    const r = radius + 0.18 + rng() * 0.25;
+    addSphere(world.group, 0.23 + rng() * 0.08, i % 2 ? PALETTE.sandbag : PALETTE.sandbagDark,
+      cx + Math.cos(a) * r, topY + 0.08 + rng() * 0.1, cz + Math.sin(a) * r,
+      1.5, 0.7, 0.85);
+  }
+  return { x: cx, z: cz, y: floorY, topY };
 }
 
 export function trenchDepthAt(x, z) {
@@ -149,6 +244,10 @@ export class World {
     this.animateProps = [];
     this.rng = mulberry32(777);
     this.interact = {};
+    // 0 = dawn, 0.25 = noon, 0.5 = dusk, 0.75 = midnight
+    this.dayPhase = 0.075;
+    this.dayLength = 300;
+    this.sunDir = new THREE.Vector3(-0.55, 0.36, 0.5).normalize();
 
     this.setupSky();
     this.setupLights();
@@ -223,12 +322,33 @@ export class World {
       this.clouds.push(s);
     }
 
+    // star field for the night half of the cycle
+    const starRng = mulberry32(1916);
+    const starPos = [];
+    for (let i = 0; i < 420; i++) {
+      const a = starRng() * TAU;
+      const y = starRng() * 0.9 + 0.08;
+      const r = Math.sqrt(1 - y * y);
+      starPos.push(Math.cos(a) * r * 1040, y * 1040, Math.sin(a) * r * 1040);
+    }
+    const starGeo = new THREE.BufferGeometry();
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+    const starMat = new THREE.PointsMaterial({
+      color: 0xdfe8ff, size: 2.4, sizeAttenuation: false,
+      transparent: true, opacity: 0, depthWrite: false, fog: false,
+    });
+    const stars = new THREE.Points(starGeo, starMat);
+    stars.frustumCulled = false;
+    skyRig.add(stars);
+    this.starMat = starMat;
+
     this.scene.fog = new THREE.FogExp2(0xbfb69b, 0.00135);
   }
 
   setupLights() {
     const hemi = new THREE.HemisphereLight(0xb9c7d6, 0x4a3b28, 0.62);
     this.scene.add(hemi);
+    this.hemi = hemi;
     const sun = new THREE.DirectionalLight(0xffd9a0, 1.85);
     sun.position.set(-140, 120, 100);
     sun.castShadow = true;
@@ -246,11 +366,12 @@ export class World {
     const fill = new THREE.DirectionalLight(0x8fa6bf, 0.45);
     fill.position.set(100, 60, -120);
     this.scene.add(fill);
+    this.fill = fill;
   }
 
   /* ---------------- terrain ---------------- */
   buildTerrain() {
-    const segX = 380, segZ = 200;
+    const segX = TERRAIN_NX, segZ = TERRAIN_NZ;
     const geo = new THREE.PlaneGeometry(WORLD.width, WORLD.depth, segX, segZ);
     geo.rotateX(-Math.PI / 2);
     const pos = geo.attributes.position;
@@ -295,6 +416,7 @@ export class World {
     terrain.name = 'terrain';
     this.group.add(terrain);
     this.terrain = terrain;
+    this.terrainGeo = geo;
   }
 
   /* ---------------- trenches ---------------- */
@@ -836,29 +958,24 @@ export class World {
 
   /* ---------------- MG sites ---------------- */
   buildMGSites() {
-    const sites = [
-      { side: BRITISH, x: -30, team: 'british' },
-      { side: BRITISH, x: 140, team: 'british' },
-      { side: GERMAN, x: 38, team: 'german' },
-      { side: GERMAN, x: -160, team: 'german' },
-    ];
+    // No pre-placed machine guns any more.  Engineers (player or bots) build
+    // and upgrade them with a hammer; see Game.spawnBuiltMG().
     this.mgSites = [];
-    for (const s of sites) {
-      const cz = trenchZ(s.x, s.side);
-      const w = trenchWidth(s.x);
-      const z = cz - s.side * (w - 0.55);
-      const y = heightAt(s.x, z);
-      // sandbag nest
-      const nest = new THREE.Group();
-      const rng = mulberry32(Math.floor(s.x * 13 + 7));
-      for (let i = 0; i < 16; i++) {
-        const a = (i / 16) * TAU;
-        addSphere(nest, 0.28, i % 2 ? PALETTE.sandbag : PALETTE.sandbagDark, Math.cos(a) * 1.15, 0.15 + (i % 3) * 0.18, Math.sin(a) * 1.15, 1.5, 0.75, 0.8);
-      }
-      nest.position.set(s.x, y, z);
-      this.group.add(nest);
-      this.mgSites.push({ x: s.x, z, y, team: s.team, side: s.side });
+  }
+
+  addMGNest(x, z, team) {
+    const y = heightAt(x, z);
+    const nest = new THREE.Group();
+    const rng = mulberry32(Math.floor(x * 13 + z * 7 + 99) >>> 0);
+    for (let i = 0; i < 18; i++) {
+      const a = (i / 18) * TAU;
+      addSphere(nest, 0.27 + rng() * 0.05, i % 2 ? PALETTE.sandbag : PALETTE.sandbagDark,
+        Math.cos(a) * (1.15 + rng() * 0.12), 0.12 + (i % 3) * 0.17, Math.sin(a) * (1.15 + rng() * 0.12),
+        1.45, 0.72, 0.85);
     }
+    nest.position.set(x, y, z);
+    this.group.add(nest);
+    return { x, z, y, team, side: team === 'british' ? -1 : 1 };
   }
 
   /* ---------------- distant scenery ---------------- */
@@ -898,9 +1015,45 @@ export class World {
 
   /* ---------------- per-frame ---------------- */
   update(dt, time, focus) {
+    // ---- day / night cycle -------------------------------------------------
+    this.dayPhase = (this.dayPhase + dt / this.dayLength) % 1;
+    const a = this.dayPhase * TAU;
+    const elevation = Math.sin(a);              // -1 midnight … 1 noon
+    const az = this.dayPhase * TAU * 0.9 - 0.7;
+    this.sunDir.set(Math.cos(az) * 0.85, elevation, Math.sin(az) * 0.55).normalize();
+    const light = clamp(elevation * 2.5, 0, 1);
+    const night = 1 - clamp((elevation + 0.2) / 0.42, 0, 1);
+    const dusk = clamp(1 - Math.abs(elevation) / 0.34, 0, 1) * (1 - night);
+    const skyU = this.sky?.material?.uniforms;
+    if (skyU) {
+      const blend = (key) => _colA.copy(SKY_DAY[key]).lerp(SKY_NIGHT[key], night).lerp(SKY_DAWN[key], dusk * 0.85);
+      skyU.top.value.copy(blend('top'));
+      skyU.mid.value.copy(blend('mid'));
+      skyU.bottom.value.copy(blend('bottom'));
+      skyU.sunDir.value.copy(this.sunDir);
+    }
+    this.sun.intensity = 0.08 + 1.78 * light;
+    this.sun.color.copy(_colB.copy(SKY_DAWN.sun).lerp(SKY_DAY.sun, clamp(elevation * 3, 0, 1)));
+    this.hemi.intensity = 0.14 + 0.5 * light;
+    this.hemi.color.copy(_colC.set(0x2b3550).lerp(new THREE.Color(0xb9c7d6), light));
+    this.hemi.groundColor.set(0x1b1610).lerp(new THREE.Color(0x4a3b28), light);
+    this.fill.intensity = 0.12 + 0.33 * light;
+    if (this.starMat) this.starMat.opacity = clamp(night * 1.15, 0, 0.95);
+    if (this.scene.fog) {
+      this.scene.fog.color.copy(_colA.copy(SKY_DAY.fog).lerp(SKY_NIGHT.fog, night).lerp(SKY_DAWN.fog, dusk * 0.8));
+      this.scene.fog.density = 0.00135 + night * 0.00075;
+    }
+    for (const c of this.clouds) {
+      c.material.color.setRGB(1 - night * 0.82, 1 - night * 0.82, 1 - night * 0.72);
+      if (c.userData.baseOpacity === undefined) c.userData.baseOpacity = c.material.opacity;
+      c.material.opacity = c.userData.baseOpacity * (1 - night * 0.62);
+    }
+    this.timeOfDay = night > 0.72 ? 'НОЧЬ' : (night > 0.35 ? (elevation > 0 ? 'РАССВЕТ' : 'СУМЕРКИ') : (light > 0.7 ? 'ДЕНЬ' : 'УТРО'));
+
     // shadow frustum follows player
     if (focus) {
-      this.sun.position.set(focus.x - 90, focus.y + 130, focus.z + 85);
+      const sy = Math.max(0.16, Math.abs(elevation)) * 190;
+      this.sun.position.set(focus.x + this.sunDir.x * 190, focus.y + sy, focus.z + this.sunDir.z * 170);
       this.sun.target.position.set(focus.x, focus.y, focus.z);
       this.sun.target.updateMatrixWorld();
       if (this.skyRig) this.skyRig.position.set(focus.x, 0, focus.z);

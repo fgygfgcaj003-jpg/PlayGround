@@ -1,11 +1,11 @@
 import * as THREE from 'three';
-import { World, WORLD, heightAt, trenchZ, trenchWidth, inTrench } from './world.js';
+import { World, WORLD, heightAt, trenchZ, trenchWidth, inTrench, digTrench } from './world.js';
 import { Effects } from './effects.js';
 import { AudioEngine } from './audio.js';
 import { AIController } from './ai.js';
 import { Soldier, StaticMG, Tank, Plane, Parachute, dampAngle } from './entities.js';
 import { Ragdoll } from './ragdoll.js';
-import { addBox, addCyl, addSphere, PALETTE, toonMat } from './models.js';
+import { addBox, addCyl, addSphere, addTorus, PALETTE, toonMat } from './models.js';
 import { clamp, damp, lerp, TAU } from './util.js';
 
 const _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _dir = new THREE.Vector3();
@@ -14,24 +14,77 @@ const _q = new THREE.Quaternion();
 function makePlayerRifle() {
   const g = new THREE.Group();
   const wood = PALETTE.wood, dark = PALETTE.woodDark, metal = PALETTE.gunmetal;
-  addBox(g, 0.065, 0.105, 0.62, wood, 0, 0, 0.03);
-  addBox(g, 0.06, 0.13, 0.22, dark, 0, -0.04, 0.33, 0.18);
-  addBox(g, 0.058, 0.07, 0.2, wood, 0, -0.005, -0.38);
-  addCyl(g, 0.017, 0.019, 0.8, 8, metal, 0, 0.038, -0.6, Math.PI / 2, 0, 0);
-  addCyl(g, 0.025, 0.025, 0.11, 8, metal, 0, 0.038, -0.34, Math.PI / 2, 0, 0);
-  addBox(g, 0.02, 0.03, 0.05, metal, 0, 0.075, -0.95);
-  addBox(g, 0.015, 0.018, 0.11, metal, 0.045, 0.055, 0.12, 0, 0, 0.5);
-  addBox(g, 0.06, 0.055, 0.12, metal, 0, -0.065, 0.14);
-  addBox(g, 0.012, 0.01, 0.75, PALETTE.leatherDark, -0.035, -0.06, 0.06);
+  // Lee-Enfield stock, wrist and fore-end
+  addBox(g, 0.068, 0.108, 0.68, wood, 0, 0, 0.04);
+  addBox(g, 0.062, 0.135, 0.24, dark, 0, -0.045, 0.36, 0.18);
+  addBox(g, 0.06, 0.075, 0.28, wood, 0, -0.002, -0.4);
+  addBox(g, 0.07, 0.095, 0.16, wood, 0, 0.005, -0.6);
+  // barrel, muzzle and front sight
+  addCyl(g, 0.017, 0.019, 0.86, 10, metal, 0, 0.04, -0.62, Math.PI / 2, 0, 0);
+  addCyl(g, 0.027, 0.027, 0.13, 10, metal, 0, 0.04, -0.34, Math.PI / 2, 0, 0);
+  addBox(g, 0.018, 0.045, 0.035, metal, 0, 0.093, -0.99);
+  // rear sight leaf
+  addBox(g, 0.075, 0.018, 0.045, metal, 0, 0.078, -0.08);
+  addBox(g, 0.055, 0.04, 0.025, metal, 0, 0.1, -0.08);
+  // magazine, trigger guard, trigger
+  addBox(g, 0.062, 0.075, 0.15, metal, 0, -0.075, 0.16);
+  addTorus(g, 0.035, 0.008, metal, 0, -0.078, 0.22, Math.PI / 2, 0, 0);
+  addBox(g, 0.012, 0.03, 0.018, metal, 0, -0.06, 0.22, 0.4);
+  // bolt assembly on the right side (animated during reload)
+  const bolt = new THREE.Group();
+  bolt.position.set(0.045, 0.055, 0.13);
+  addCyl(bolt, 0.014, 0.014, 0.14, 8, metal, 0, 0, 0, Math.PI / 2, 0, 0);
+  addBox(bolt, 0.018, 0.018, 0.075, metal, 0.055, -0.01, 0.0);
+  addSphere(bolt, 0.022, metal, 0.075, -0.015, 0.0);
+  g.add(bolt);
+  g.userData.bolt = bolt;
+  // sling, oiler and bayonet lug
+  addBox(g, 0.014, 0.011, 0.82, PALETTE.leatherDark, -0.038, -0.062, 0.08);
+  addCyl(g, 0.016, 0.016, 0.06, 6, PALETTE.brass, -0.02, -0.078, 0.06, Math.PI / 2, 0, 0);
+  addBox(g, 0.03, 0.03, 0.07, metal, 0, 0.012, -1.08);
   // hands & sleeves
-  addSphere(g, 0.06, PALETTE.skin, 0.02, -0.055, 0.2, 0.9, 1.1, 0.9);
-  addSphere(g, 0.055, PALETTE.skin, -0.02, -0.06, -0.3, 0.9, 1.1, 0.9);
-  addCapsule(g, 0.065, 0.3, PALETTE.khaki, 0.16, -0.22, 0.3, 0.5, 0, -0.55);
-  addCapsule(g, 0.06, 0.3, PALETTE.khaki, -0.1, -0.24, -0.22, 0.6, 0, 0.5);
+  addSphere(g, 0.062, PALETTE.skin, 0.018, -0.06, 0.22, 0.95, 1.1, 0.95);
+  addSphere(g, 0.058, PALETTE.skin, -0.018, -0.064, -0.34, 0.95, 1.1, 0.95);
+  addSphere(g, 0.05, PALETTE.skin, 0.045, -0.048, 0.11, 0.9, 1, 0.9);
+  addCapsule(g, 0.068, 0.32, PALETTE.khaki, 0.17, -0.23, 0.32, 0.5, 0, -0.55);
+  addCapsule(g, 0.062, 0.32, PALETTE.khaki, -0.11, -0.25, -0.24, 0.6, 0, 0.5);
+  addCapsule(g, 0.055, 0.24, PALETTE.khakiDark, 0.12, -0.2, 0.14, 0.5, 0, -0.7);
   const muzzle = new THREE.Object3D();
-  muzzle.position.set(0, 0.038, -1.0);
+  muzzle.position.set(0, 0.04, -1.03);
   g.add(muzzle);
   g.userData.muzzle = muzzle;
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+  return g;
+}
+
+function makeShovel() {
+  const g = new THREE.Group();
+  addCyl(g, 0.032, 0.034, 0.82, 8, PALETTE.wood, 0, 0, -0.05, Math.PI / 2, 0, 0);
+  addCyl(g, 0.045, 0.04, 0.16, 8, PALETTE.woodDark, 0, 0, 0.42, Math.PI / 2, 0, 0);
+  addBox(g, 0.22, 0.03, 0.3, PALETTE.metalDark, 0, -0.005, -0.55);
+  addBox(g, 0.18, 0.025, 0.16, PALETTE.metal, 0, -0.002, -0.76, 0.12);
+  addBox(g, 0.14, 0.02, 0.08, PALETTE.metal, 0, 0.002, -0.88, 0.22);
+  addBox(g, 0.06, 0.06, 0.12, PALETTE.woodDark, 0, 0.01, -0.36);
+  addSphere(g, 0.06, PALETTE.skin, -0.02, -0.04, 0.1, 1, 1.1, 1);
+  addSphere(g, 0.055, PALETTE.skin, 0.02, -0.05, -0.3, 1, 1.1, 1);
+  addCapsule(g, 0.066, 0.28, PALETTE.khaki, 0.13, -0.2, 0.14, 0.6, 0, -0.5);
+  addCapsule(g, 0.06, 0.26, PALETTE.khaki, -0.1, -0.22, -0.24, 0.6, 0, 0.5);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+  return g;
+}
+
+function makeHammer() {
+  const g = new THREE.Group();
+  addCyl(g, 0.03, 0.036, 0.78, 8, PALETTE.wood, 0, 0, 0.02, Math.PI / 2, 0, 0);
+  addCyl(g, 0.045, 0.045, 0.2, 8, PALETTE.woodDark, 0, 0, 0.46, Math.PI / 2, 0, 0);
+  addBox(g, 0.28, 0.12, 0.13, PALETTE.metalDark, 0, 0.01, -0.46, 0, 0, 0.04);
+  addBox(g, 0.09, 0.16, 0.16, PALETTE.gunmetal, 0, 0.01, -0.46);
+  addBox(g, 0.05, 0.04, 0.05, PALETTE.metal, 0.14, 0.01, -0.46);
+  addBox(g, 0.05, 0.04, 0.05, PALETTE.metal, -0.14, 0.01, -0.46);
+  addSphere(g, 0.06, PALETTE.skin, -0.02, -0.05, 0.16, 1, 1.1, 1);
+  addSphere(g, 0.055, PALETTE.skin, 0.02, -0.055, -0.22, 1, 1.1, 1);
+  addCapsule(g, 0.066, 0.28, PALETTE.khaki, 0.14, -0.21, 0.16, 0.6, 0, -0.5);
+  addCapsule(g, 0.06, 0.26, PALETTE.khaki, -0.1, -0.23, -0.2, 0.6, 0, 0.5);
   g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
   return g;
 }
@@ -115,19 +168,30 @@ export class Game {
       ads: false, kick: 0, mg: null, tank: null, plane: null, chute: null,
       isPlayer: true, mounted: null,
       kills: 0, spawnGuard: 0,
+      kit: 'engineer', slot: 0, buildCd: 0, boltT: 0, toolSwing: 0,
     };
     this.playerTarget = {
       isPlayer: true, dead: false, x: x, y: heightAt(x, z), z, headY: 1.5, running: false,
       hit: (dmg, from, dir) => this.damagePlayer(dmg, from, dir),
     };
     this.spawnPoint = { x, z };
-    this.viewmodel = makePlayerRifle();
-    this.viewmodel.scale.setScalar(0.86);
-    this.viewmodel.position.set(0.3, -0.26, -0.56);
-    this.viewmodel.rotation.set(0.02, 0.06, 0);
-    this.camera.add(this.viewmodel);
     this.vmBase = new THREE.Vector3(0.3, -0.26, -0.56);
     this.vmAds = new THREE.Vector3(0, -0.09, -0.43);
+    this.viewmodels = {
+      rifle: makePlayerRifle(),
+      shovel: makeShovel(),
+      hammer: makeHammer(),
+    };
+    for (const vm of Object.values(this.viewmodels)) {
+      vm.scale.setScalar(0.86);
+      vm.position.copy(this.vmBase);
+      vm.rotation.set(0.02, 0.06, 0);
+      vm.visible = false;
+      this.camera.add(vm);
+    }
+    this.viewmodel = this.viewmodels.rifle;
+    this.viewmodel.visible = true;
+    this.vmBolt = this.viewmodel.userData.bolt;
     this.camera.rotation.order = 'YXZ';
     this.updateCameraTransform(0, true);
   }
@@ -142,6 +206,10 @@ export class Game {
       this.keys.add(e.code);
       if (e.code === 'KeyE' && !e.repeat) this.interact();
       if (e.code === 'KeyR' && !e.repeat) this.reload();
+      if (e.code === 'Digit1' && !e.repeat) this.selectSlot(0);
+      if (e.code === 'Digit2' && !e.repeat) this.selectSlot(1);
+      if (e.code === 'Digit3' && !e.repeat) this.selectSlot(2);
+      if (e.code === 'KeyQ' && !e.repeat) this.selectSlot((this.player.slot + 1) % 3);
       if (e.code === 'KeyC' && !e.repeat) this.player.crouch = !this.player.crouch;
       if (e.code === 'Space' && !e.repeat) this.tryJump();
       if (e.code === 'Escape' && this.player.mode === 'plane') this.bailPlane();
@@ -247,6 +315,20 @@ export class Game {
     bind(act, () => this.interact());
     bind(rel, () => this.reload());
     bind(jump, () => this.tryJump());
+    const tool = document.getElementById('btn-tool');
+    if (tool) bind(tool, () => this.selectSlot((this.player.slot + 1) % 3));
+  }
+
+  selectSlot(i) {
+    const p = this.player;
+    if (p.dead || p.mode !== 'foot' || i === p.slot) return;
+    p.slot = i;
+    p.ads = false;
+    p.reloading = 0;
+    p.buildCd = 0;
+    const names = ['Винтовка SMLE', 'Лопата — копать окоп', 'Молоток — строить/улучшать пулемёт'];
+    this.hud?.message(names[i], 2);
+    this.audio?.noiseBurst?.(0.04, 900, 0.5, 0.02, 0.1);
   }
 
   setupResize() {
@@ -296,21 +378,30 @@ export class Game {
         s.homeX = x; s.homeZ = z; s.patrolX = x; s.patrolZ = z;
       }
     }
-    // MG detachments (StaticMG registers itself)
-    for (const site of this.world.mgSites) new StaticMG(this, site);
-    const bMG = this.mgs.find((m) => m.team === 'british' && !m.mountedBy);
-    if (bMG) {
-      const s = make({ x: bMG.site.x + 4, z: bMG.site.z, team: 'british', variant: 'british1' });
-      s.aiRole = 'mg'; s.mgSite = bMG; s.homeX = bMG.site.x; s.homeZ = bMG.site.z;
+    // Engineer detachments — no pre-placed MGs: they dig and build them.
+    for (const [side, team] of [[-1, 'british'], [1, 'german']]) {
+      for (let i = 0; i < 2; i++) {
+        const x = (team === 'british' ? -250 : -120) + i * 170;
+        const z = trenchZ(x, side) - side * (trenchWidth(x) - 0.9);
+        const s = make({ x, z, team, variant: team === 'british' ? 'british2' : 'german2', role: 'engineer' });
+        s.aiRole = 'engineer';
+        s.homeX = x; s.homeZ = z; s.patrolX = x; s.patrolZ = z;
+        s.engineerCd = 2 + i * 4;
+      }
     }
-    const gMG = this.mgs.find((m) => m.team === 'german' && !m.mountedBy);
-    if (gMG) {
-      const s = make({ x: gMG.site.x - 4, z: gMG.site.z, team: 'german', variant: 'german1' });
-      s.aiRole = 'mg'; s.mgSite = gMG; s.homeX = gMG.site.x; s.homeZ = gMG.site.z;
+    // Assault columns start far back at the camps and must march to the front.
+    for (const [side, team] of [[-1, 'british'], [1, 'german']]) {
+      for (let i = 0; i < 4; i++) {
+        const x = (side < 0 ? -470 : 440) + (Math.random() - 0.5) * 190;
+        const z = side * (155 + Math.random() * 65);
+        const s = make({ x, z, team, variant: i % 2 ? (team === 'british' ? 'british2' : 'german2') : (team === 'british' ? 'british1' : 'german1') });
+        s.aiRole = 'assault'; s.assault = true;
+        s.homeX = x; s.homeZ = z; s.patrolX = x; s.patrolZ = z; s.aiMoveTimer = 0;
+      }
     }
     // British tank (empty — crew will board) and German tank (already crewed)
     this.britishTank = new Tank(this, { team: 'british', type: 'mark1', x: WORLD.tankSpawn.x, z: WORLD.tankSpawn.z, yaw: 0.15 });
-    this.germanTank = new Tank(this, { team: 'german', type: 'a7v', x: 205, z: 96, yaw: Math.PI - 0.1, crewed: true });
+    this.germanTank = new Tank(this, { team: 'german', type: 'a7v', x: 150, z: 72, yaw: Math.PI - 0.1, crewed: true });
     // 5 crew for the British tank
     const crewSpots = [[-196, -102], [-190, -96], [-200, -92], [-188, -106], [-198, -108]];
     for (let i = 0; i < 5; i++) {
@@ -474,7 +565,11 @@ export class Game {
       if (p.reloading <= 0) { p.ammo = 10; p.reserve -= 10; h.message('', 0); }
     }
     p.fireCd = Math.max(0, p.fireCd - dt);
+    p.buildCd = Math.max(0, (p.buildCd || 0) - dt);
+    p.boltT = Math.max(0, (p.boltT || 0) - dt);
+    p.toolSwing = Math.max(0, (p.toolSwing || 0) - dt * 3.2);
     p.kick = Math.max(0, p.kick - dt * 6);
+    if (p.slot !== 0) p.ads = false;
     // flight stick recenter
     if (this.flightStick.active) {
       this.flightStick.x = damp(this.flightStick.x, 0, 1.2, dt);
@@ -545,7 +640,7 @@ export class Game {
       p.jumpY += p.vy * dt;
       if (p.jumpY <= 0) { p.jumpY = 0; p.vy = 0; p.grounded = true; }
     }
-    p.pos.y = ground + p.jumpY;
+    p.pos.y = ground + 0.015 + p.jumpY;
     // footsteps / bob
     const moving = Math.hypot(vx, vz) > 0.5;
     if (moving) {
@@ -556,10 +651,107 @@ export class Game {
         this.audio.noiseBurst?.(0.06, 240, 0.7, 0.035, (Math.random() - 0.5) * 0.2);
       }
     }
-    // shooting
-    if (this.input.fire && p.fireCd <= 0 && p.reloading <= 0) this.fireRifle();
-    p.ads = this.input.ads;
+    // tool use
+    if (p.slot === 0) {
+      if (this.input.fire && p.fireCd <= 0 && p.reloading <= 0) this.fireRifle();
+      p.ads = this.input.ads;
+    } else if (this.input.fire && p.buildCd <= 0) {
+      if (p.slot === 1) this.useShovel();
+      else this.useHammer();
+    }
     // plane/tank nearby? interactions handled by E
+  }
+
+  /* ---------------- engineer tools ---------------- */
+  useShovel() {
+    const p = this.player;
+    p.buildCd = 1.15;
+    p.toolSwing = 1;
+    this.audio?.noiseBurst?.(0.09, 170, 0.7, 0.1, -0.3);
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    const at = p.pos.clone().add(new THREE.Vector3(dir.x, 0, dir.z).normalize().multiplyScalar(2.5));
+    at.x = clamp(at.x, WORLD.minX + 6, WORLD.maxX - 6);
+    at.z = clamp(at.z, WORLD.minZ + 6, WORLD.maxZ - 6);
+    digTrench(this.world, at.x, at.z, 2.65, 1.55);
+    this.effects.dust(new THREE.Vector3(at.x, heightAt(at.x, at.z) + 1, at.z), 14);
+    this.effects.impactDirt(new THREE.Vector3(at.x, heightAt(at.x, at.z) + 0.4, at.z), 1.4);
+    this.hud.message('Окоп углублён. Держитесь ниже бруствера!', 2);
+  }
+
+  useHammer() {
+    const p = this.player;
+    p.buildCd = 2.1;
+    p.toolSwing = 1;
+    // upgrade a nearby friendly MG first
+    const near = this.mgs
+      .filter((m) => m.team === 'british')
+      .map((m) => ({ m, d: Math.hypot(m.site.x - p.pos.x, m.site.z - p.pos.z) }))
+      .sort((a, b) => a.d - b.d)[0];
+    if (near && near.d < 5.5 && near.m.level < 3) {
+      near.m.upgrade();
+      this.effects.sparks(new THREE.Vector3(near.m.site.x, near.m.site.y + 1.2, near.m.site.z), 8);
+      this.hud.message(`Пулемёт улучшен до уровня ${near.m.level}`, 2);
+      this.audio?.noiseBurst?.(0.05, 240, 0.7, 0.06, 0.25);
+      return;
+    }
+    if (this.mgs.filter((m) => m.team === 'british').length >= 4) {
+      this.hud.message('Достигнут лимит пулемётов. Улучшайте существующие.', 2);
+      return;
+    }
+    const dir = this.camera.getWorldDirection(new THREE.Vector3());
+    const at = p.pos.clone().add(new THREE.Vector3(dir.x, 0, dir.z).normalize().multiplyScalar(3.2));
+    at.x = clamp(at.x, WORLD.minX + 6, WORLD.maxX - 6);
+    at.z = clamp(at.z, WORLD.minZ + 6, WORLD.maxZ - 6);
+    const mg = this.spawnBuiltMG(at.x, at.z, 'british', true);
+    if (mg) {
+      this.effects.dust(new THREE.Vector3(at.x, mg.site.y + 0.8, at.z), 12);
+      this.audio?.noiseBurst?.(0.06, 210, 0.8, 0.08, 0.2);
+      this.hud.message('Пулемётное гнездо построено. Нажмите E, чтобы встать за пулемёт.', 3);
+    }
+  }
+
+  spawnBuiltMG(x, z, team, byPlayer = false) {
+    const site = this.world.addMGNest(x, z, team);
+    const mg = new StaticMG(this, site);
+    mg.built = true;
+    mg.level = 1;
+    mg.maxAmmo = 600;
+    mg.ammo = 600;
+    mg.baseYaw = team === 'british' ? 0 : Math.PI;
+    mg.group.rotation.y = mg.baseYaw;
+    this.hud?.killfeed(byPlayer ? 'Вы построили пулемёт' : `${team === 'british' ? 'Британский' : 'Германский'} инженер построил пулемёт`, team);
+    return mg;
+  }
+
+  engineerBuild(s) {
+    const side = s.team === 'british' ? -1 : 1;
+    const own = this.mgs.filter((m) => m.team === s.team);
+    const upgradeable = own
+      .filter((m) => m.level < 3)
+      .map((m) => ({ m, d: Math.hypot(m.site.x - s.x, m.site.z - s.z) }))
+      .sort((a, b) => a.d - b.d)[0];
+    if (upgradeable && upgradeable.d < 28 && this.ai.rng() < 0.45) {
+      upgradeable.m.upgrade();
+      s.toolSwing = 1;
+      return true;
+    }
+    if (own.length < 4) {
+      const x = clamp(s.x + (this.ai.rng() - 0.5) * 10, WORLD.minX + 20, WORLD.maxX - 20);
+      const tz = trenchZ(x, side) - side * (trenchWidth(x) - 0.55);
+      const z = Math.abs(s.z - tz) < 12 ? tz : s.z;
+      if (this.mgs.every((m) => Math.hypot(m.site.x - x, m.site.z - z) > 4)) {
+        this.spawnBuiltMG(x, z, s.team, false);
+        s.toolSwing = 1;
+        return true;
+      }
+    }
+    // otherwise improve the position with a scrape
+    if (side < 0 ? s.z > -230 : s.z < 230) {
+      digTrench(this.world, s.x, s.z, 2.4, 1.15);
+      s.toolSwing = 1;
+      return true;
+    }
+    return false;
   }
 
   updatePlanePlayer(dt) {
@@ -567,10 +759,10 @@ export class Game {
     if (!pl || !pl.alive) { this.killPlayer('Самолёт уничтожен'); return; }
     // controls
     const stick = this.flightStick;
-    const kRoll = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
-    pl.controls.roll = clamp(stick.x + kRoll, -1, 1);
+    const kYaw = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0);
+    pl.controls.roll = clamp(stick.x, -1, 1);
     pl.controls.pitch = clamp(-stick.y, -1, 1);
-    pl.controls.yaw = clamp((this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0), -1, 1) * 0.6;
+    pl.controls.yaw = clamp(kYaw, -1, 1) * 0.85;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) pl.throttle = Math.min(1, pl.throttle + dt * 0.8);
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) pl.throttle = Math.max(0, pl.throttle - dt * 0.8);
     if (this.touch.my) pl.controls.pitch = clamp(-this.touch.my, -1, 1);
@@ -618,51 +810,60 @@ export class Game {
   updateTankPlayer(dt) {
     const p = this.player, t = p.tank;
     if (!t || !t.alive) { this.killPlayer('Танк уничтожен'); return; }
+    // Direct, readable controls: W/S throttle, A/D steer, mouse aims the guns.
     const fwd = (this.keys.has('KeyW') ? 1 : 0) - (this.keys.has('KeyS') ? 1 : 0);
-    t.desiredSpeed = fwd * 3.0;
-    const desired = p.yaw - Math.PI;
-    const err = ((desired - t.yaw + Math.PI * 3) % TAU) - Math.PI;
-    t.steer = clamp(err * 1.4, -1, 1);
+    const turn = (this.keys.has('KeyD') ? 1 : 0) - (this.keys.has('KeyA') ? 1 : 0) + this.touch.mx;
+    t.desiredSpeed = fwd * 4.2;
+    t.steer = clamp(turn, -1, 1);
+    t.playerOperated = true;
     p.pos.copy(t.pos);
     t.cannonCd = Math.max(0, t.cannonCd - dt);
-    if (this.input.ads && t.cannonCd <= 0 && t.operational) {
-      t.cannonCd = 3.2;
+    t.mgCd = Math.max(0, (t.mgCd || 0) - dt);
+    if (this.input.ads && t.cannonCd <= 0) {
+      t.cannonCd = 3.0;
       t.fireCannon(this.playerAimPoint());
+      p.kick = 1;
+      this.effects.shake = Math.min(1.8, this.effects.shake + 0.35);
     }
-    if (this.input.fire) {
-      t.fireCooldown[0] = Math.max(0, t.fireCooldown[0] - dt);
-      if (t.fireCooldown[0] <= 0) {
-        t.fireCooldown[0] = 0.1;
-        const from = t.getSeatWorld('gunnerL');
-        _dir.set(-Math.sin(p.yaw) * Math.cos(p.pitch), Math.sin(p.pitch), -Math.cos(p.yaw) * Math.cos(p.pitch)).normalize();
-        const hit = this.raycastTargets(from, _dir, 380, 'british');
-        const to = hit ? hit.point : from.clone().addScaledVector(_dir, 380);
-        this.effects.tracer(from, to, 0xffe0a0, 0.07);
-        this.effects.muzzle(from, _dir, 0.9);
-        this.audio.mg('british', from);
-        if (hit) this.applyHit(hit, 14 + Math.random() * 5, from, _dir, true);
-      }
+    if (this.input.fire && t.mgCd <= 0) {
+      t.mgCd = 0.085;
+      const from = t.getSeatWorld('gunnerL');
+      _dir.set(-Math.sin(p.yaw) * Math.cos(p.pitch), Math.sin(p.pitch), -Math.cos(p.yaw) * Math.cos(p.pitch)).normalize();
+      const hit = this.raycastTargets(from, _dir, 420, 'british');
+      const to = hit ? hit.point : from.clone().addScaledVector(_dir, 420);
+      this.effects.tracer(from, to, 0xffe0a0, 0.07);
+      this.effects.muzzle(from, _dir, 0.9);
+      this.audio.mg('british', from);
+      if (hit) this.applyHit(hit, 15 + Math.random() * 5, from, _dir, true);
     }
-    if (this.keys.has('KeyE')) { /* handled by keydown */ }
   }
 
   updateViewmodel(dt) {
     const p = this.player;
-    const vm = this.viewmodel;
     const show = p.mode === 'foot' && !p.dead;
-    vm.visible = show;
+    const name = p.slot === 1 ? 'shovel' : p.slot === 2 ? 'hammer' : 'rifle';
+    for (const [key, vm] of Object.entries(this.viewmodels)) vm.visible = show && key === name;
+    const vm = this.viewmodels[name];
+    this.viewmodel = vm;
     if (!show) return;
-    const ads = p.ads;
+    const ads = p.ads && p.slot === 0;
     const target = ads ? this.vmAds : this.vmBase;
     const sway = Math.sin(p.bob) * 0.006 * (p.speedFactor || 0);
     const sway2 = Math.cos(p.bob * 0.5) * 0.005 * (p.speedFactor || 0);
+    const reloadP = p.reloading > 0 ? 1 - p.reloading / 2.5 : 0;
+    const reloadArc = p.reloading > 0 ? Math.sin(reloadP * Math.PI) : 0;
+    const boltArc = p.boltT > 0 ? Math.sin(clamp(1 - p.boltT / 0.42, 0, 1) * Math.PI) : 0;
+    const swing = Math.sin((1 - p.toolSwing) * Math.PI) * p.toolSwing;
     vm.position.x = damp(vm.position.x, target.x + sway, 10, dt);
-    vm.position.y = damp(vm.position.y, target.y + sway2 - p.kick * 0.012, 10, dt);
-    vm.position.z = damp(vm.position.z, target.z + p.kick * 0.05, 12, dt);
-    vm.rotation.x = damp(vm.rotation.x, 0.02 + p.kick * 0.05, 12, dt);
-    vm.rotation.y = damp(vm.rotation.y, ads ? 0 : 0.06, 10, dt);
-    vm.rotation.z = damp(vm.rotation.z, p.reloading > 0 ? -0.6 * Math.sin((1 - p.reloading / 2.6) * Math.PI) : 0, 8, dt);
-    if (p.reloading > 0) vm.position.y -= Math.sin((1 - p.reloading / 2.6) * Math.PI) * 0.15;
+    vm.position.y = damp(vm.position.y, target.y + sway2 - p.kick * 0.012 - reloadArc * 0.16 - swing * 0.05, 10, dt);
+    vm.position.z = damp(vm.position.z, target.z + p.kick * 0.05 + swing * 0.08, 12, dt);
+    vm.rotation.x = damp(vm.rotation.x, 0.02 + p.kick * 0.05 + reloadArc * 0.55 + swing * 0.7, 12, dt);
+    vm.rotation.y = damp(vm.rotation.y, ads ? 0 : 0.06 + reloadArc * 0.35, 10, dt);
+    vm.rotation.z = damp(vm.rotation.z, -reloadArc * 0.7 + swing * 0.35, 8, dt);
+    if (p.slot === 0 && this.vmBolt) {
+      this.vmBolt.position.z = 0.13 - boltArc * 0.09 - reloadArc * 0.07;
+      this.vmBolt.rotation.z = boltArc * 0.9;
+    }
   }
 
   tryJump() {
@@ -673,7 +874,7 @@ export class Game {
 
   reload() {
     const p = this.player;
-    if (p.mode !== 'foot' || p.dead || p.reloading > 0 || p.ammo === 10) return;
+    if (p.mode !== 'foot' || p.dead || p.slot !== 0 || p.reloading > 0 || p.ammo === 10) return;
     p.reloading = 2.5;
     this.audio.reload();
     this.hud.message('Перезарядка…', 2.5);
@@ -685,6 +886,7 @@ export class Game {
     p.ammo--;
     p.fireCd = 0.72;
     p.kick = 1;
+    p.boltT = 0.42;
     p.pitch += 0.012 + Math.random() * 0.008;
     const spread = (p.ads ? 0.0016 : 0.007) + (p.speedFactor || 0) * 0.006;
     this.camera.updateMatrixWorld();
@@ -939,17 +1141,19 @@ export class Game {
   enterTank(t) {
     const p = this.player;
     t.playerAboard = true;
+    t.playerOperated = true;
     p.mode = 'tank'; p.tank = t;
     p.pos.copy(t.pos);
     p.yaw = t.yaw + Math.PI;
     p.pitch = 0;
-    this.hud.message(t.operational ? 'Вы в танке Mark I. WASD — ход, ЛКМ — пулемёт, ПКМ — орудие.' : 'Экипаж ещё не занял места. Подождите.', 3);
+    this.hud.message('Вы в танке. W/S — ход, A/D — поворот, ЛКМ — пулемёт, ПКМ — орудие.', 3.5);
   }
 
   exitTank() {
     const p = this.player;
     if (p.tank) {
       p.tank.playerAboard = false;
+      p.tank.playerOperated = false;
       const t = p.tank;
       const side = new THREE.Vector3(4.2, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), t.yaw);
       p.pos.set(t.pos.x + side.x, heightAt(t.pos.x + side.x, t.pos.z + side.z), t.pos.z + side.z);
@@ -1098,15 +1302,24 @@ export class Game {
       s.homeX = x; s.homeZ = z; s.patrolX = x; s.patrolZ = z;
       return;
     }
-    const x = (team === 'british' ? -260 : 60) + (Math.random() - 0.5) * 380;
-    const z = trenchZ(x, side) - side * (trenchWidth(x) - 0.85);
+    // Reserves form up at the camps and have to march to the front.
+    const x = (team === 'british' ? -420 : 410) + (Math.random() - 0.5) * 190;
+    const z = side * (150 + Math.random() * 60);
     const s = new Soldier(this, {
       x, z, team, variant: Math.random() < 0.33 ? (team === 'british' ? 'british2' : 'german2') : (team === 'british' ? 'british1' : 'german1'),
     });
-    s.homeX = x; s.homeZ = z; s.patrolX = x; s.patrolZ = z; s.aiRole = 'rifle';
-    // if an MG is free, send the reinforcement to it
-    const free = this.mgs.find((m) => m.team === team && !m.mountedBy && Math.hypot(m.site.x - x, m.site.z - z) < 200);
-    if (free && Math.random() < 0.6) { s.mgSite = free; s.aiRole = 'mg'; }
+    s.homeX = x; s.homeZ = z; s.patrolX = x; s.patrolZ = z;
+    if (Math.random() < 0.28) {
+      s.aiRole = 'engineer';
+      s.engineerCd = 3 + Math.random() * 6;
+    } else {
+      s.aiRole = 'assault';
+      s.assault = true;
+      s.aiMoveTimer = 0;
+    }
+    // a free built MG is manned once the reserve reaches the line
+    const free = this.mgs.find((m) => m.team === team && !m.mountedBy && Math.hypot(m.site.x - x, m.site.z - z) < 260);
+    if (free && Math.random() < 0.5) { s.mgSite = free; s.aiRole = 'mg'; }
   }
 
   updateAmbient(dt) {
@@ -1183,6 +1396,8 @@ class HUD {
       minimap: document.getElementById('minimap'),
       objective: document.getElementById('objective'),
       touch: document.getElementById('touch-controls'),
+      tod: document.getElementById('time-of-day'),
+      tools: document.getElementById('tool-slots'),
     };
     this.msgTimer = 0;
     this.hitTimer = 0;
@@ -1251,15 +1466,29 @@ class HUD {
     if (this.el.healthText) this.el.healthText.textContent = hp;
     if (this.el.score) this.el.score.innerHTML = `<span class="brit">${g.stats.allied}</span> : <span class="ger">${g.stats.enemy}</span>`;
     if (this.el.ammo) {
-      if (p.mode === 'foot') this.el.ammo.textContent = p.reloading > 0 ? '…' : `${p.ammo} / ${p.reserve}`;
-      else if (p.mode === 'mg' && p.mg) this.el.ammo.textContent = `${p.mg.ammo}${p.mg.overheated ? ' ПЕРЕГРЕВ' : ''}`;
+      if (p.mode === 'foot') {
+        if (p.slot === 0) this.el.ammo.textContent = p.reloading > 0 ? '…' : `${p.ammo} / ${p.reserve}`;
+        else this.el.ammo.textContent = p.buildCd > 0 ? '…' : '∞';
+      } else if (p.mode === 'mg' && p.mg) this.el.ammo.textContent = `${p.mg.ammo}${p.mg.overheated ? ' ПЕРЕГРЕВ' : ''}`;
       else if (p.mode === 'tank') this.el.ammo.textContent = '∞';
       else if (p.mode === 'plane' && p.plane) this.el.ammo.textContent = `${p.plane.ammo}`;
       else this.el.ammo.textContent = '—';
     }
     if (this.el.weapon) {
-      const names = { foot: 'SMLE Mk III', mg: 'Vickers .303', tank: 'Mark I — 7.7 мм', plane: 'Sopwith Camel — Lewis', parachute: 'Парашют' };
+      const footNames = ['SMLE Mk III', 'ЛОПАТА · ОКОП', 'МОЛОТОК · ПУЛЕМЁТ'];
+      const names = { foot: footNames[p.slot] || footNames[0], mg: 'Vickers .303', tank: 'Mark I — 7.7 мм', plane: 'Sopwith Camel — Lewis', parachute: 'Парашют' };
       this.el.weapon.textContent = names[p.mode] || '';
+    }
+    if (this.el.tools) {
+      for (const child of this.el.tools.children) {
+        child.classList.toggle('active', p.mode === 'foot' && Number(child.dataset.slot) === p.slot);
+      }
+    }
+    if (this.el.tod) {
+      const total = (6 + g.world.dayPhase * 24) % 24;
+      const hh = String(Math.floor(total)).padStart(2, '0');
+      const mm = String(Math.floor((total % 1) * 60)).padStart(2, '0');
+      this.el.tod.textContent = `${g.world.timeOfDay || 'ДЕНЬ'} · ${hh}:${mm}`;
     }
     // compass
     if (this.el.compass) {
@@ -1277,7 +1506,7 @@ class HUD {
       } else if (p.mode === 'tank' && p.tank) {
         const t = p.tank;
         this.el.vehicle.classList.add('show');
-        this.el.vehicle.innerHTML = `<div><b>MARK I</b> ${t.operational ? 'ЭКИПАЖ ГОТОВ' : 'ЭКИПАЖ ' + t.crewCount + '/3'}</div><div><b>ПРОЧНОСТЬ</b> ${Math.round(t.hp / t.maxHp * 100)}%</div><div class="bar"><i style="width:${t.hp / t.maxHp * 100}%"></i></div>`;
+        this.el.vehicle.innerHTML = `<div><b>MARK I</b> ${(t.operational || t.playerAboard) ? 'ОРУДИЕ ГОТОВО' : 'ЭКИПАЖ ' + t.crewCount + '/5'}</div><div><b>ПРОЧНОСТЬ</b> ${Math.round(t.hp / t.maxHp * 100)}%</div><div class="bar"><i style="width:${t.hp / t.maxHp * 100}%"></i></div>`;
       } else {
         this.el.vehicle.classList.remove('show');
       }
@@ -1345,6 +1574,12 @@ class HUD {
       ctx.fillStyle = pl.team === 'british' ? '#f1e6b8' : '#e0846b';
       ctx.beginPath();
       ctx.moveTo(mx, my - 5); ctx.lineTo(mx + 4, my + 3); ctx.lineTo(mx - 4, my + 3); ctx.closePath(); ctx.fill();
+    }
+    for (const mg of g.mgs) {
+      const [mx, my] = toMap(mg.site.x, mg.site.z);
+      ctx.fillStyle = mg.team === 'british' ? '#f3e2a4' : '#d9775f';
+      ctx.beginPath(); ctx.arc(mx, my, 2.4, 0, TAU); ctx.fill();
+      ctx.strokeStyle = 'rgba(20,16,10,0.7)'; ctx.lineWidth = 1; ctx.stroke();
     }
     // player arrow
     ctx.save();

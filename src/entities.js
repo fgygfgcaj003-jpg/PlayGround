@@ -232,10 +232,28 @@ export class StaticMG {
     this.cooldown = 0;
     this.heat = 0;
     this.overheated = false;
+    this.maxAmmo = 500;
     this.ammo = 500;
+    this.level = 1;
+    this.damageMul = 1;
+    this.built = false;
     this.target = null;
     this.spin = 0;
     this.game.mgs.push(this);
+  }
+
+  upgrade() {
+    if (this.level >= 3) {
+      this.ammo = this.maxAmmo;
+      return false;
+    }
+    this.level++;
+    this.maxAmmo += 250;
+    this.ammo = this.maxAmmo;
+    this.damageMul += 0.3;
+    // better sandbags / reinforced mount
+    this.group.scale.setScalar(1 + (this.level - 1) * 0.05);
+    return true;
   }
 
   get worldMuzzle() {
@@ -301,11 +319,11 @@ export class StaticMG {
     this.game.audio?.mg(this.team, from);
     this.ammo--;
     this.heat = Math.min(1, this.heat + 0.018);
-    this.cooldown = 0.075;
+    this.cooldown = Math.max(0.05, 0.085 - this.level * 0.008);
     this.spin += 1;
-    let chance = clamp(0.42 - dist / 320, 0.06, 0.42);
+    let chance = clamp(0.42 - dist / 320, 0.06, 0.42) * (1 + (this.level - 1) * 0.08);
     if (!blocked && Math.random() < chance) {
-      target.hit?.(9 + Math.random() * 7, from, _v3.copy(to).sub(from).normalize());
+      target.hit?.((9 + Math.random() * 7) * this.damageMul, from, _v3.copy(to).sub(from).normalize());
     } else if (Math.random() < 0.6) {
       this.game.effects.impactDirt(to, 0.5);
     }
@@ -357,6 +375,10 @@ export class Tank {
     this.pitch = 0; this.roll = 0;
     this.stuck = 0;
     this.moving = false;
+    this.playerOperated = false;
+    this.playerAboard = false;
+    this.mgCd = 0;
+    this.bobPhase = 0;
     this.group.rotation.order = 'YXZ';
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.yaw;
@@ -373,13 +395,21 @@ export class Tank {
 
   buildCrewVisuals() {
     this.crewHeads = {};
-    const spots = {
-      driver: [1.55, 2.98, 0],
-      gunnerL: [0.35, 2.1, 2.12],
-      gunnerR: [0.35, 2.1, -2.12],
-      crew1: [-1.6, 2.25, 1.0],
-      crew2: [-1.6, 2.25, -1.0],
-    };
+    const spots = this.type === 'mark1'
+      ? {
+        driver: [1.55, 2.9, 0],
+        gunnerL: [0.9, 1.9, 1.48],
+        gunnerR: [0.9, 1.9, -1.48],
+        crew1: [-1.5, 2.12, 0.72],
+        crew2: [-1.5, 2.12, -0.72],
+      }
+      : {
+        driver: [-1.4, 3.5, 0],
+        gunnerL: [1.25, 2.35, 1.5],
+        gunnerR: [1.25, 2.35, -1.5],
+        crew1: [-1.3, 2.9, 0.6],
+        crew2: [-1.3, 2.9, -0.6],
+      };
     for (const [name, p] of Object.entries(spots)) {
       const g = new THREE.Group();
       const head = addSphere(g, 0.13, PALETTE.skin, 0, 0.12, 0, 1, 1.1, 1);
@@ -447,21 +477,27 @@ export class Tank {
       }
       return;
     }
-    // movement
+    // movement — heavy but responsive enough to drive
+    const canDrive = this.operational || this.playerOperated;
     const trench = trenchDepthAt(this.pos.x, this.pos.z);
     let speedMul = 1;
-    if (trench > 0.6) speedMul = 0.28;
+    if (trench > 0.7) speedMul = 0.55;
     if (this.stuck > 0) { speedMul = 0; this.stuck -= dt; }
-    const targetSpeed = this.operational ? this.desiredSpeed ?? 0 : 0;
-    this.speed = damp(this.speed, targetSpeed * speedMul, 1.6, dt);
-    if (Math.abs(this.speed) > 0.05) {
+    const f0 = Math.sin(this.yaw), c0 = Math.cos(this.yaw);
+    const slopeAhead = heightAt(this.pos.x + f0 * 2.4, this.pos.z + c0 * 2.4) - heightAt(this.pos.x, this.pos.z);
+    if (slopeAhead > 0.55) speedMul *= 0.5;
+    let targetSpeed = canDrive ? (this.desiredSpeed ?? 0) : 0;
+    targetSpeed = clamp(targetSpeed, -this.maxSpeed, this.maxSpeed);
+    this.speed = damp(this.speed, targetSpeed * speedMul, 3.4, dt);
+    if (Math.abs(this.speed) > 0.02) {
       this.pos.x += Math.sin(this.yaw) * this.speed * dt;
       this.pos.z += Math.cos(this.yaw) * this.speed * dt;
       this.trackDist += this.speed * dt;
       this.moving = true;
     } else this.moving = false;
-    // steering
-    if (this.steer) this.yaw += this.steer * dt * 0.5 * clamp(Math.abs(this.speed) / 2, 0.2, 1);
+    // steering — tanks can pivot slowly in place, faster at speed
+    const steerAuth = 0.3 + 0.7 * clamp(Math.abs(this.speed) / this.maxSpeed, 0, 1);
+    if (Math.abs(this.steer || 0) > 0.01) this.yaw += this.steer * dt * 0.95 * steerAuth;
     this.pos.x = clamp(this.pos.x, WORLD.minX + 10, WORLD.maxX - 10);
     this.pos.z = clamp(this.pos.z, WORLD.minZ + 10, WORLD.maxZ - 10);
 
@@ -473,9 +509,11 @@ export class Tank {
     const hl = heightAt(this.pos.x + c * hz, this.pos.z - f * hz);
     const hr = heightAt(this.pos.x - c * hz, this.pos.z + f * hz);
     const avg = (hf + hb + hl + hr) / 4;
-    this.pos.y = damp(this.pos.y, avg + 0.06, 8, dt);
-    this.pitch = damp(this.pitch, Math.atan2(hb - hf, hx * 2), 5, dt);
-    this.roll = damp(this.roll, Math.atan2(hl - hr, hz * 2), 5, dt);
+    this.bobPhase += Math.abs(this.speed) * dt * 2.6;
+    const bob = this.moving ? Math.sin(this.bobPhase) * 0.018 : 0;
+    this.pos.y = damp(this.pos.y, avg + 0.06 + bob, 8, dt);
+    this.pitch = damp(this.pitch, clamp(Math.atan2(hb - hf, hx * 2), -0.32, 0.32), 5, dt);
+    this.roll = damp(this.roll, clamp(Math.atan2(hl - hr, hz * 2), -0.26, 0.26), 5, dt);
     this.group.position.copy(this.pos);
     this.group.rotation.set(this.pitch, this.yaw, this.roll);
     this.group.updateMatrixWorld(true);
@@ -486,7 +524,7 @@ export class Tank {
       }
     }
 
-    // track plates
+    // track plates / road wheels
     for (const tr of this.tracks) {
       const n = tr.path.length;
       const dummy = this._dummy || (this._dummy = new THREE.Object3D());
@@ -502,6 +540,7 @@ export class Tank {
       tr.plates.instanceMatrix.needsUpdate = true;
       for (const w of tr.wheels) w.rotation.z += this.speed * dt * 1.2;
     }
+    for (const w of (this.group.userData.wheels || [])) w.rotation.z += this.speed * dt * 1.6;
 
     // smoke from exhaust / damage
     this.smokeT -= dt;
@@ -511,8 +550,8 @@ export class Tank {
       this.game.effects.smoke(p, this.hp < this.maxHp * 0.55 ? 1.2 : 0.6, [0.22, 0.21, 0.19], 1, 0.5, 3.5);
     }
 
-    // weapons
-    if (this.operational) {
+    // weapons (AI crew; the player fires through updateTankPlayer)
+    if (this.operational && !this.playerAboard) {
       this.fireCooldown[0] = Math.max(0, this.fireCooldown[0] - dt);
       this.fireCooldown[1] = Math.max(0, this.fireCooldown[1] - dt);
       this.cannonCd = Math.max(0, this.cannonCd - dt);
@@ -553,7 +592,8 @@ export class Tank {
 
   fireCannon(targetPos) {
     if (!this.alive) return;
-    const local = new THREE.Vector3(1.55, 2.0, 0.15).applyAxisAngle(UP, this.yaw);
+    const local = (this.type === 'a7v' ? new THREE.Vector3(3.55, 2.12, 0) : new THREE.Vector3(1.55, 2.05, 0.15))
+      .applyAxisAngle(UP, this.yaw);
     const from = this.pos.clone().add(local);
     from.y += 0.25;
     const dir = targetPos.clone().sub(from).normalize();
@@ -800,31 +840,41 @@ export class Plane {
     if (this.onGround) {
       this.groundTime += dt;
       const gy = heightAt(this.pos.x, this.pos.z) + 0.06;
-      this.pos.y = damp(this.pos.y, gy, 8, dt);
-      // settle to ground orientation
-      const f = this.forward;
-      const hf = heightAt(this.pos.x + f.x * 2, this.pos.z + f.z * 2);
-      const hb = heightAt(this.pos.x - f.x * 2, this.pos.z - f.z * 2);
-      const slopePitch = Math.atan2(hf - hb, 4);
-      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(slopePitch, this.yaw, 0, 'YXZ'));
-      this.quat.slerp(targetQ, 1 - Math.exp(-6 * dt));
-      const spd = this.speed;
+      this.pos.y = damp(this.pos.y, gy, 10, dt);
+      // Settle firmly upright.  Planes used to keep a rolled/pitched quat
+      // after touchdown and could end up taxiing upside-down.
+      const yaw = this.yaw;
+      const hf = heightAt(this.pos.x + Math.sin(yaw) * 2.4, this.pos.z + Math.cos(yaw) * 2.4);
+      const hb = heightAt(this.pos.x - Math.sin(yaw) * 2.4, this.pos.z - Math.cos(yaw) * 2.4);
+      const slopePitch = clamp(Math.atan2(hf - hb, 4.8), -0.16, 0.16);
+      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-slopePitch, yaw, 0, 'YXZ'));
+      const upDot = _v2.set(0, 1, 0).applyQuaternion(this.quat).y;
+      this.quat.slerp(targetQ, 1 - Math.exp(-(upDot < 0.7 ? 22 : 9) * dt));
+      const hSpd = Math.hypot(this.vel.x, this.vel.z);
+      const fx = Math.sin(yaw), fz = Math.cos(yaw);
       if (controlled) {
-        this.vel.set(Math.sin(this.yaw), 0, Math.cos(this.yaw)).multiplyScalar(spd);
+        // keep ground velocity horizontal regardless of quat
+        this.vel.x = fx * hSpd;
+        this.vel.z = fz * hSpd;
+        if (this.throttle > 0.02) {
+          this.vel.x += fx * 8.5 * this.throttle * engineAuth * dt;
+          this.vel.z += fz * 8.5 * this.throttle * engineAuth * dt;
+        }
       }
-      if (controlled && this.throttle > 0.05) {
-        this.vel.addScaledVector(this.forward, 9 * this.throttle * engineAuth * dt);
-      } else {
-        this.vel.multiplyScalar(Math.exp(-1.8 * dt));
-      }
+      this.vel.x *= Math.exp(-(controlled ? 0.12 : 1.8) * dt);
+      this.vel.z *= Math.exp(-(controlled ? 0.12 : 1.8) * dt);
+      this.vel.y = 0;
       this.pos.addScaledVector(this.vel, dt);
-      this.yaw += this.controls.yaw * dt * 0.7 * (spd > 1 ? 1 : 0.2);
+      const spd = Math.hypot(this.vel.x, this.vel.z);
+      // fast, readable ground steering
+      this.yaw += this.controls.yaw * dt * (spd > 1 ? 1.45 : 0.4);
       // takeoff
-      if (controlled && this.throttle > 0.65 && spd > 24) {
+      if (controlled && this.throttle > 0.6 && spd > 22) {
         this.onGround = false;
-        this.vel.y = 5.5;
-        this.pos.y += 0.5;
+        this.vel.y = 6.2;
+        this.pos.y += 0.55;
         this.takeoffBoost = 2.6;
+        this.quat.setFromEuler(new THREE.Euler(-0.12, this.yaw, 0, 'YXZ'));
         this.game.hud?.message('Отрыв!', 1.2);
       }
       if (!controlled) this.throttle = 0;
@@ -835,9 +885,9 @@ export class Plane {
       const speed = this.speed;
       const wingFactor = (this.modules.wingL + this.modules.wingR) / 200;
       if (controlled) {
-        const pitchRate = 1.25 * authority * tailAuth;
-        const rollRate = 2.35 * authority * wingAuth;
-        const yawRate = 0.6 * authority * tailAuth;
+        const pitchRate = 1.5 * authority * tailAuth;
+        const rollRate = 3.0 * authority * wingAuth;
+        const yawRate = 1.35 * authority * tailAuth;
         const pitch = clamp(this.controls.pitch, -1, 1);
         const roll = clamp(this.controls.roll, -1, 1);
         const yaw = clamp(this.controls.yaw, -1, 1);
@@ -847,6 +897,15 @@ export class Plane {
         // asymmetric wing damage roll
         const wingBias = (this.modules.wingR - this.modules.wingL) / 100;
         this.quat.multiply(_q2.setFromEuler(new THREE.Euler(0, 0, wingBias * 0.5 * dt)));
+        // Never let the aircraft settle inverted; auto-level when the stick
+        // is released, and strongly correct if the canopy points at the ground.
+        const upNow = _v3.set(0, 1, 0).applyQuaternion(this.quat);
+        const handsOff = Math.abs(pitch) < 0.08 && Math.abs(roll) < 0.08;
+        if (upNow.y < 0.18 || (handsOff && upNow.y < 0.9)) {
+          const fwdNow = this.forward;
+          const flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(fwdNow.x, fwdNow.z), 0, 'YXZ'));
+          this.quat.slerp(flat, 1 - Math.exp(-(upNow.y < 0.18 ? 2.4 : 0.9) * dt));
+        }
         this.throttle = clamp(this.throttle, 0, 1);
         const thrust = 15.5 * this.throttle * engineAuth;
         this.vel.addScaledVector(this.forward, thrust * dt);

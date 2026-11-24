@@ -26,6 +26,7 @@ export class AIController {
       if (s.dead || s.inVehicle) continue;
       if (s.aiRole === 'crew' && s.boardTarget) { this.updateCrew(s, dt); continue; }
       if (s.aiRole === 'pilot' && s.boardTarget) { this.updatePilotBoarding(s, dt); continue; }
+      if (s.aiRole === 'engineer') { this.updateEngineer(s, dt); continue; }
       if (s.aiRole === 'sentry') { this.updateSentry(s, dt); continue; }
       if (s.mgSite) { this.updateMGunner(s, dt); continue; }
       this.updateInfantry(s, dt);
@@ -166,6 +167,40 @@ export class AIController {
     this.stepToward(s, p.pos.x, p.pos.z, 1, true);
   }
 
+  updateEngineer(s, dt) {
+    const game = this.game;
+    s.engineerCd = (s.engineerCd ?? 4) - dt;
+    s.toolSwing = Math.max(0, (s.toolSwing || 0) - dt * 3.2);
+    const side = s.team === 'british' ? -1 : 1;
+    const frontZ = trenchZ(s.x, side) - side * (trenchWidth(s.x) - 0.85);
+    const far = Math.abs(s.z - frontZ);
+    if (far > 10) {
+      this.stepToward(s, s.x + (this.rng() - 0.5) * 10, frontZ, 0.9, far > 28);
+      s.wantFire = false;
+      return;
+    }
+    s.setMove(0, 0);
+    // engineers stop work and return fire if the enemy is close
+    s.aiTimer = (s.aiTimer ?? 0) - dt;
+    if (s.aiTimer <= 0) {
+      s.aiTimer = 0.5 + this.rng() * 0.6;
+      s.target = game.findTarget(s.team, s.x, s.z, 120);
+    }
+    if (s.target && !game.isDead(s.target)) {
+      s.setAim(s.target);
+      s.wantFire = true;
+      s.fireTarget = s.target;
+    } else {
+      s.wantFire = false;
+      s.fireTarget = null;
+      s.target = null;
+    }
+    if (s.engineerCd <= 0) {
+      s.engineerCd = 7 + this.rng() * 8;
+      game.engineerBuild(s);
+    }
+  }
+
   updateSentry(s, dt) {
     s.aiTimer = (s.aiTimer ?? 0) - dt;
     if (s.aiTimer <= 0) {
@@ -204,7 +239,7 @@ export class AIController {
     const side = t.team === 'british' ? 1 : -1;
     if (!t.path || !t.path.length) {
       const base = t.team === 'british' ? [[-180, -92], [-120, -64], [-70, -25], [-20, -2], [-20, 38], [-10, 74], [40, 92]]
-        : [[180, 92], [120, 64], [70, 25], [20, 2], [20, -38], [10, -74], [-40, -92]];
+        : [[120, 58], [80, 30], [35, 6], [18, -26], [6, -54], [-24, -70], [-60, -88]];
       t.path = base.map(([x, z]) => new THREE.Vector3(x, 0, z));
       t.pathIndex = 0;
     }
