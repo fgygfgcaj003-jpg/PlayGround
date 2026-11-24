@@ -330,7 +330,7 @@ export function buildSoldier(variant = 'british1') {
  *  TANK — Mark I (British) and A7V (German)
  * ================================================================== */
 function rhombusPath(length, height, samples) {
-  // rhomboid track loop in X/Y plane (front +X)
+  // rhomboid track loop in X/Y plane (model front +X)
   const pts = [];
   const a = length / 2, b = height / 2;
   for (let i = 0; i < samples; i++) {
@@ -342,41 +342,81 @@ function rhombusPath(length, height, samples) {
   return pts;
 }
 
-function buildTrackBand(parent, side, mats) {
-  const length = 7.4, height = 2.35;
-  const path = rhombusPath(length, height, 56);
-  // track frame plate (extruded rhombus)
-  const shape = new THREE.Shape();
-  path.forEach((p, i) => i ? shape.lineTo(p.x, p.y) : shape.moveTo(p.x, p.y));
-  shape.closePath();
-  const hole = new THREE.Path();
-  const inner = rhombusPath(length - 0.55, height - 0.55, 56);
-  inner.forEach((p, i) => i ? hole.lineTo(p.x, p.y) : hole.moveTo(p.x, p.y));
-  hole.closePath();
-  shape.holes.push(hole);
-  const frameGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.22, bevelEnabled: false, curveSegments: 4 });
+function stadiumPath(halfLen, radius, samples) {
+  // rounded-rectangle track loop in X/Y (A7V), centred on y = radius + 0.18
+  const pts = [];
+  const cy = 0;
+  const arc = Math.floor(samples / 2);
+  for (let i = 0; i <= arc; i++) {
+    const a = -Math.PI / 2 + Math.PI * (i / arc);
+    pts.push(new THREE.Vector2(halfLen + Math.cos(a) * radius, cy + Math.sin(a) * radius));
+  }
+  for (let i = 0; i <= arc; i++) {
+    const a = Math.PI / 2 + Math.PI * (i / arc);
+    pts.push(new THREE.Vector2(-halfLen + Math.cos(a) * radius, cy + Math.sin(a) * radius));
+  }
+  return pts;
+}
+
+function addSpinner(parent, radius, width, color, x, y, z) {
+  // Cylinder axis is baked along Z once, so rotation.z is a clean axle spin.
+  const geo = new THREE.CylinderGeometry(radius, radius, width, 12).rotateX(Math.PI / 2);
+  const m = new THREE.Mesh(geo, toonMat(color));
+  m.position.set(x, y, z);
+  m.castShadow = true; m.receiveShadow = true;
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.34, radius * 0.34, width * 1.08, 8).rotateX(Math.PI / 2), toonMat(0x5b5545));
+  m.add(hub);
+  parent.add(m);
+  return m;
+}
+
+function buildTrackBand(parent, side, mats, opts = {}) {
+  const length = opts.length ?? 7.4;
+  const height = opts.height ?? 2.35;
+  const width = opts.width ?? 1.5;
+  const path = opts.stadium
+    ? stadiumPath(length / 2 - height / 2, height / 2, 56)
+    : rhombusPath(length, height, 56);
+  const frameGeo = new THREE.ExtrudeGeometry((() => {
+    const shape = new THREE.Shape();
+    path.forEach((p, i) => i ? shape.lineTo(p.x, p.y) : shape.moveTo(p.x, p.y));
+    shape.closePath();
+    const hole = new THREE.Path();
+    const inner = opts.stadium
+      ? stadiumPath(length / 2 - height / 2, height / 2 - 0.28, 56)
+      : rhombusPath(length - 0.55, height - 0.55, 56);
+    inner.forEach((p, i) => i ? hole.lineTo(p.x, p.y) : hole.moveTo(p.x, p.y));
+    hole.closePath();
+    shape.holes.push(hole);
+    return shape;
+  })(), { depth: 0.2, bevelEnabled: false, curveSegments: 4 });
   const frame = new THREE.Mesh(frameGeo, mats.frame);
-  frame.position.set(0, 1.25, side * 1.72);
+  const baseY = opts.frameY ?? 1.25;
+  frame.position.set(0, baseY, side * width);
   frame.castShadow = true; frame.receiveShadow = true;
   parent.add(frame);
 
-  // instanced track plates around perimeter
-  const plateGeo = new THREE.BoxGeometry(0.2, 0.34, 0.5);
-  const plates = new THREE.InstancedMesh(plateGeo, mats.track, 60);
+  // Instanced track shoes around the perimeter.
+  const plateGeo = new THREE.BoxGeometry(0.3, 0.14, 0.54);
+  const plateCount = 64;
+  const plates = new THREE.InstancedMesh(plateGeo, mats.track, plateCount);
   plates.castShadow = true; plates.receiveShadow = true;
   plates.frustumCulled = false;
   parent.add(plates);
 
-  // road wheels
-  const wheels = [];
-  for (let i = 0; i < 7; i++) {
-    const t = (i / 7) * TAU + 0.2;
-    const x = Math.cos(t) * (length / 2 - 0.7);
-    const y = Math.sin(t) * (height / 2 - 0.7) * 0.9;
-    const w = addCyl(parent, 0.34, 0.34, 0.3, 10, 0x3a352d, x, 1.25 + y, side * 1.6, Math.PI / 2, 0, 0);
-    wheels.push(w);
+  // Road wheels / sprockets, animated together with the shoes.
+  const spinners = [];
+  const wheelY = opts.stadium ? 0.52 : 0.62;
+  const wheelXs = opts.stadium ? [-2.35, -1.35, -0.35, 0.65, 1.65, 2.55] : [-2.45, -1.65, -0.85, 0, 0.85, 1.65, 2.45];
+  for (const wx of wheelXs) {
+    spinners.push(addSpinner(parent, opts.stadium ? 0.34 : 0.3, 0.34, 0x3a352d, wx, wheelY, side * (width - 0.14)));
   }
-  return { plates, path, wheels, side, length, height };
+  if (!opts.stadium) {
+    // idler and drive sprockets at the pointed ends
+    spinners.push(addSpinner(parent, 0.44, 0.38, 0x464233, 3.15, 1.3, side * (width - 0.14)));
+    spinners.push(addSpinner(parent, 0.44, 0.38, 0x464233, -3.15, 1.3, side * (width - 0.14)));
+  }
+  return { plates, path, spinners, side, length, height, width, baseY, phase: 0 };
 }
 
 export function buildMarkI() {
@@ -396,45 +436,47 @@ export function buildMarkI() {
   const hull = new THREE.Mesh(new THREE.BoxGeometry(6.4, 1.15, 2.8), mats.hull);
   hull.position.set(0, 1.35, 0); hull.castShadow = true; hull.receiveShadow = true;
   group.add(hull);
-  // sloped glacis front/back
+  // sloped glacis front/back (volumetric, riveted plates)
   addBox(group, 1.0, 1.25, 2.8, PALETTE.tankGreen, 3.25, 1.3, 0, 0, 0, 0.35, mats.hull);
   addBox(group, 1.0, 1.25, 2.8, PALETTE.tankGreen, -3.25, 1.3, 0, 0, 0, -0.35, mats.hull);
-  // top deck
+  addBox(group, 0.4, 0.18, 2.6, 0x4c4a35, 3.55, 1.88, 0, 0, 0, 0.15);
+  addBox(group, 0.4, 0.18, 2.6, 0x4c4a35, -3.55, 1.88, 0, 0, 0, -0.15);
+  // top deck + raised cab
   addBox(group, 5.4, 0.12, 2.6, PALETTE.tankBrown, 0, 1.96, 0, 0, 0, 0, mats.hull2);
-  // driver's cab
-  const cab = addBox(group, 1.5, 0.95, 2.2, PALETTE.tankGreen, 1.55, 2.45, 0, 0, 0, 0, mats.hull);
-  addBox(group, 1.2, 0.5, 1.0, 0x26281f, 1.62, 2.62, 0.0, 0, 0, 0, mats.metal); // vision slit box
+  addBox(group, 1.5, 0.95, 2.2, PALETTE.tankGreen, 1.55, 2.45, 0, 0, 0, 0, mats.hull);
+  addBox(group, 0.16, 1.0, 2.2, 0x53513a, 2.32, 2.45, 0, 0, 0, 0.06);
+  addBox(group, 1.2, 0.5, 1.0, 0x26281f, 1.62, 2.62, 0.0, 0, 0, 0, mats.metal);
   addBox(group, 0.9, 0.07, 0.06, PALETTE.metalDark, 1.9, 2.7, 0.56);
-  // sponsons
+  addBox(group, 0.9, 0.07, 0.06, PALETTE.metalDark, 1.9, 2.7, -0.56);
+  // side sponsons with gun ports
   for (const side of [1, -1]) {
-    const sp = addBox(group, 2.1, 1.05, 0.85, PALETTE.tankGreen, 0.35, 1.55, side * 1.72, 0, 0, 0, mats.hull);
+    addBox(group, 2.1, 1.05, 0.85, PALETTE.tankGreen, 0.35, 1.55, side * 1.72, 0, 0, 0, mats.hull);
     addBox(group, 1.5, 0.35, 0.55, 0x2c2f25, 0.35, 1.85, side * 1.75, 0, 0, 0, mats.metal);
-    // machine-gun port
     addCyl(group, 0.075, 0.09, 0.9, 8, PALETTE.gunmetal, 0.9, 1.6, side * 2.15, Math.PI / 2, 0, 0, mats.metal);
     addCyl(group, 0.11, 0.11, 0.12, 8, PALETTE.gunmetal, 0.9, 1.6, side * 2.55, Math.PI / 2, 0, 0, mats.metal);
-    // sponson hatch
     addBox(group, 0.5, 0.55, 0.05, 0x3c3a2b, -0.35, 1.5, side * 2.16);
-    // crew gunner visible port
-    addSphere(group, 0.12, PALETTE.skin, 0.35, 1.62, side * 2.14, 1, 1, 0.7);
+    addBox(group, 0.28, 0.28, 0.06, 0x1b1d18, 0.35, 1.62, side * 2.16);
+    // armour ribs across the sponson
+    for (let i = -1; i <= 1; i++) addBox(group, 0.06, 0.78, 0.9, 0x4d4b36, 0.35 + i * 0.62, 1.55, side * 1.72);
   }
-  // front & rear hatches, exhaust
   addBox(group, 0.9, 0.5, 0.06, 0x363425, 2.2, 1.8, 1.44);
   addCyl(group, 0.13, 0.13, 0.6, 8, PALETTE.metalDark, -2.1, 2.3, 1.0, 0, 0, 0.5);
   addCyl(group, 0.13, 0.13, 0.6, 8, PALETTE.metalDark, -2.1, 2.3, -1.0, 0, 0, 0.5);
-  // unditching beam
+  // unditching beam and rails
   addBox(group, 3.4, 0.22, 0.22, PALETTE.woodDark, -0.3, 2.15, 0, 0, 0, 0);
+  for (const side of [1, -1]) addBox(group, 3.8, 0.06, 0.08, 0x5c5941, -0.3, 2.02, side * 0.85);
   // rivets
   const rivetGeo = new THREE.SphereGeometry(0.035, 5, 4);
-  const rivets = new THREE.InstancedMesh(rivetGeo, mats.metal, 220);
+  const rivets = new THREE.InstancedMesh(rivetGeo, mats.metal, 260);
   const m4 = new THREE.Matrix4();
   let ri = 0;
   const rng = mulberry32(42);
-  for (let i = 0; i < 110; i++) {
+  for (let i = 0; i < 130; i++) {
     const x = (rng() - 0.5) * 6.2, z = (rng() < 0.5 ? 1 : -1) * 1.42;
     m4.makeTranslation(x, 1.0 + rng() * 0.9, z);
     rivets.setMatrixAt(ri++, m4);
   }
-  for (let i = 0; i < 80; i++) {
+  for (let i = 0; i < 100; i++) {
     const x = (rng() - 0.5) * 5.2, z = (rng() - 0.5) * 2.5;
     m4.makeTranslation(x, 1.98, z);
     rivets.setMatrixAt(ri++, m4);
@@ -443,13 +485,12 @@ export function buildMarkI() {
   rivets.castShadow = true;
   group.add(rivets);
   // mud clumps
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 16; i++) {
     const side = rng() < 0.5 ? 1 : -1;
     addSphere(group, 0.18 + rng() * 0.2, PALETTE.mudDark, (rng() - 0.5) * 5.5, 0.25 + rng() * 0.3, side * (1.9 + rng() * 0.2), 1.4, 0.5, 1.2);
   }
-  // tail skid
   addBox(group, 0.25, 0.25, 1.1, PALETTE.woodDark, -3.5, 0.65, 0, 0, 0, 0.6);
-  group.userData = { tracks, type: 'mark1' };
+  group.userData = { tracks, type: 'mark1', wheels: [] };
   return group;
 }
 
@@ -460,53 +501,53 @@ export function buildA7V() {
     hull2: toonMat(0x55553f),
     metal: toonMat(PALETTE.metalDark),
     track: toonMat(0x39362d),
+    frame: toonMat(0x46422f),
   };
-  addBox(group, 6.6, 1.9, 3.2, 0x6a6a55, 0, 1.55, 0, 0, 0, 0, mats.hull);
-  addBox(group, 6.9, 0.5, 3.4, 0x5c5c45, 0, 0.7, 0, 0, 0, 0, mats.hull2);
-  addBox(group, 3.4, 1.15, 2.4, 0x6f6f58, -0.2, 2.85, 0, 0, 0, 0, mats.hull);
-  addBox(group, 1.4, 0.8, 1.2, 0x777760, -1.4, 3.6, 0, 0, 0, 0, mats.hull2);
-  addBox(group, 0.8, 0.1, 0.08, PALETTE.black, -1.4, 3.7, 0.62, 0, 0, 0, mats.metal);
+  // lower hull and belly
+  addBox(group, 6.6, 1.55, 3.15, 0x6a6a55, 0, 1.42, 0, 0, 0, 0, mats.hull);
+  addBox(group, 6.2, 0.5, 2.6, 0x4f4d3a, 0, 0.46, 0, 0, 0, 0, mats.hull2);
+  addBox(group, 6.95, 0.32, 3.35, 0x5c5c45, 0, 0.78, 0, 0, 0, 0, mats.hull2);
+  // superstructure / fighting compartment
+  addBox(group, 3.5, 1.2, 2.45, 0x6f6f58, -0.15, 2.78, 0, 0, 0, 0, mats.hull);
+  addBox(group, 3.75, 0.18, 2.65, 0x5a5a44, -0.15, 3.42, 0);
+  addBox(group, 1.45, 0.8, 1.2, 0x777760, -1.4, 3.55, 0, 0, 0, 0, mats.hull2);
+  addBox(group, 0.9, 0.1, 0.08, PALETTE.black, -1.4, 3.7, 0.62, 0, 0, 0, mats.metal);
+  addBox(group, 1.0, 0.45, 0.9, 0x61614c, 0.45, 3.44, 0);
+  addCyl(group, 0.1, 0.1, 0.7, 8, PALETTE.metalDark, -0.9, 3.85, -0.35, Math.PI / 2, 0, 0);
   // side MG sponsons
   for (const side of [1, -1]) {
-    addBox(group, 1.3, 0.85, 0.6, 0x6a6a55, 1.3, 2.0, side * 1.85, 0, 0, 0, mats.hull);
-    addCyl(group, 0.06, 0.075, 0.9, 8, PALETTE.gunmetal, 1.3, 2.0, side * 2.35, Math.PI / 2, 0, 0, mats.metal);
-    addBox(group, 0.7, 0.1, 0.2, 0x2a2a22, 1.3, 2.42, side * 1.8, 0, 0, 0, mats.metal);
+    addBox(group, 1.35, 0.9, 0.62, 0x6a6a55, 1.15, 2.0, side * 1.9, 0, 0, 0, mats.hull);
+    addCyl(group, 0.06, 0.075, 0.95, 8, PALETTE.gunmetal, 1.15, 2.0, side * 2.4, Math.PI / 2, 0, 0, mats.metal);
+    addBox(group, 0.7, 0.1, 0.2, 0x2a2a22, 1.15, 2.42, side * 1.85, 0, 0, 0, mats.metal);
+    // armour bevel + cross
+    addBox(group, 1.1, 0.16, 0.66, 0x565640, 1.15, 1.63, side * 1.9);
+    addBox(group, 0.7, 0.14, 0.03, 0x2a2a24, 0.5, 2.05, side * 2.23);
+    addBox(group, 0.14, 0.7, 0.03, 0x2a2a24, 0.5, 2.05, side * 2.23);
   }
-  // cannon at front
-  addCyl(group, 0.11, 0.14, 1.2, 10, PALETTE.gunmetal, 3.6, 2.1, 0, 0, 0, Math.PI / 2, mats.metal);
-  addBox(group, 0.8, 0.9, 1.1, 0x6a6a55, 3.05, 2.05, 0, 0, 0, 0, mats.hull);
-  // tracks with animated road wheels so movement is legible
-  const wheels = [];
-  const wheelGeo = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 10);
-  wheelGeo.rotateX(Math.PI / 2); // axle along Z
-  const wheelMat = toonMat(0x35322a);
-  const hubMat = toonMat(0x55503d);
+  // forward cannon in a real pivot
+  const cannonPivot = new THREE.Group();
+  cannonPivot.position.set(1.95, 3.0, 0);
+  group.add(cannonPivot);
+  addBox(cannonPivot, 0.7, 0.8, 1.1, 0x686852, 0, 0, 0, 0, 0, 0, mats.hull);
+  addCyl(cannonPivot, 0.11, 0.14, 1.55, 10, PALETTE.gunmetal, 0.95, 0.03, 0, 0, 0, Math.PI / 2, mats.metal);
+  addCyl(cannonPivot, 0.15, 0.15, 0.24, 10, PALETTE.metalDark, 1.68, 0.03, 0, 0, 0, Math.PI / 2, mats.metal);
+  addBox(cannonPivot, 0.16, 0.2, 0.3, 0x3c3c30, -0.32, -0.05, 0);
+  // tracks with proper animated shoes
+  const tracks = [];
   for (const side of [1, -1]) {
-    for (let i = 0; i < 12; i++) {
-      addBox(group, 0.45, 0.5, 0.22, 0x3d3a30, -2.9 + i * 0.52, 0.5, side * 1.95);
-    }
-    addBox(group, 6.3, 0.7, 0.3, 0x45422f, 0, 0.55, side * 1.95);
-    for (let i = 0; i < 5; i++) {
-      const w = new THREE.Mesh(wheelGeo, wheelMat);
-      w.position.set(-2.2 + i * 1.1, 0.52, side * 2.02);
-      w.castShadow = true;
-      group.add(w);
-      wheels.push(w);
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.27, 8).rotateX(Math.PI / 2), hubMat);
-      hub.position.copy(w.position);
-      group.add(hub);
-    }
+    tracks.push(buildTrackBand(group, side, mats, { length: 7.0, height: 1.05, width: 2.0, stadium: true, frameY: 0.55 }));
+    // side skirt above track
+    addBox(group, 6.2, 0.55, 0.14, 0x5c5c45, 0, 1.18, side * 1.95);
   }
   // exhausts
   addCyl(group, 0.1, 0.1, 0.8, 8, PALETTE.metalDark, -2.4, 3.2, 0.7, 0, 0, 0.2, mats.metal);
   addCyl(group, 0.1, 0.1, 0.8, 8, PALETTE.metalDark, -2.4, 3.2, -0.7, 0, 0, 0.2, mats.metal);
-  // iron cross decals
-  const crossMat = toonMat(0x2a2a24);
-  for (const side of [1, -1]) {
-    addBox(group, 0.7, 0.14, 0.03, 0x2a2a24, 0.6, 1.9, side * 1.72, 0, 0, 0, crossMat);
-    addBox(group, 0.14, 0.7, 0.03, 0x2a2a24, 0.6, 1.9, side * 1.72, 0, 0, 0, crossMat);
-  }
-  group.userData = { type: 'a7v', tracks: [], wheels };
+  addBox(group, 0.5, 0.12, 0.12, 0x3a3a30, -2.2, 3.53, 0.7);
+  addBox(group, 0.5, 0.12, 0.12, 0x3a3a30, -2.2, 3.53, -0.7);
+  // roof rails and stowage
+  for (const side of [1, -1]) addBox(group, 3.4, 0.05, 0.06, 0x4c4c38, -0.15, 3.55, side * 0.9);
+  addBox(group, 0.7, 0.25, 0.45, PALETTE.woodDark, -1.0, 3.55, 0.9);
+  group.userData = { type: 'a7v', tracks, wheels: [], cannonPivot };
   return group;
 }
 
@@ -533,26 +574,83 @@ function addRoundel(parent, r, x, y, z, german = false) {
   return g;
 }
 
-function wing(parent, span, chord, thick, y, z, color, mat, dihedral = 0) {
-  const geo = new THREE.BoxGeometry(span, thick, chord, 16, 1, 4);
-  // round the wing tips
+function makeWingHalfGeometry(halfSpan, chord, thick, dihedral, taper = 0.5) {
+  const geo = new THREE.BoxGeometry(halfSpan, thick, chord, 10, 1, 4);
+  geo.translate(halfSpan / 2, 0, 0);
   const pos = geo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
-    const tip = Math.max(0, (Math.abs(x) - span * 0.36) / (span * 0.14));
-    if (tip > 0) {
-      const f = Math.max(0.05, 1 - tip * 0.9);
-      pos.setZ(i, pos.getZ(i) * f);
-      pos.setY(i, pos.getY(i) * (0.5 + f * 0.5));
-    }
-    pos.setY(i, pos.getY(i) + Math.abs(x) / span * dihedral);
+    const t = clamp(x / halfSpan, 0, 1);
+    const shape = 1 - taper * t * t;
+    pos.setZ(i, pos.getZ(i) * shape);
+    pos.setY(i, pos.getY(i) * (0.45 + 0.55 * shape) + dihedral * t);
+    if (t > 0.92) pos.setY(i, pos.getY(i) * 0.7);
   }
   geo.computeVertexNormals();
-  const m = new THREE.Mesh(geo, mat || toonMat(color));
-  m.position.set(0, y, z);
-  m.castShadow = true; m.receiveShadow = true;
-  parent.add(m);
-  return m;
+  return geo;
+}
+
+function addWingHalf(parent, side, span, chord, thick, y, z, color, mat, dihedral, withAileron = true) {
+  const half = span / 2;
+  const geo = makeWingHalfGeometry(half, chord, thick, dihedral);
+  const mesh = new THREE.Mesh(geo, mat || toonMat(color));
+  mesh.position.set(0, y, z);
+  if (side < 0) mesh.rotation.y = Math.PI;
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  parent.add(mesh);
+  if (withAileron) {
+    const ag = new THREE.BoxGeometry(half * 0.62, thick * 0.72, chord * 0.2);
+    ag.translate(half * 0.32 + half * 0.5, 0, -chord * 0.56);
+    const a = new THREE.Mesh(ag, toonMat(0x5b5a3f));
+    a.castShadow = true;
+    mesh.add(a);
+    mesh.userData.aileron = a;
+  }
+  return mesh;
+}
+
+function buildSideWing(parent, side, german) {
+  const bodyColor = german ? PALETTE.planeBlue : PALETTE.planeKhaki;
+  const bodyMat = toonMat(bodyColor);
+  const darkMat = toonMat(german ? 0x4f5a66 : 0x5f5c3c);
+  const wood = toonMat(PALETTE.woodDark);
+  const g = new THREE.Group();
+  // Camel/albatros style staggered biplane: top wing forward and above.
+  const top = addWingHalf(g, side, 8.8, 1.48, 0.13, 2.24, 0.68, bodyColor, bodyMat, 0.12);
+  const bot = addWingHalf(g, side, 7.7, 1.38, 0.12, 1.02, 0.78, bodyColor, bodyMat, 0.1);
+  // wing ribs pressed into the fabric
+  for (let i = 1; i <= 5; i++) {
+    const x = side * (i * 0.72);
+    addBox(g, 0.055, 0.035, 1.25, darkMat, x, 2.31 + i * 0.017, 0.68);
+    addBox(g, 0.05, 0.03, 1.16, darkMat, x, 1.09 + i * 0.015, 0.78);
+  }
+  // interplane struts on this side
+  for (const x of [side * 1.08, side * 2.72]) {
+    const s1 = new THREE.Mesh(new THREE.BoxGeometry(0.07, 1.22, 0.09), wood);
+    s1.position.set(x, 1.62, 0.72); s1.rotation.z = side * 0.012;
+    s1.castShadow = true; g.add(s1);
+    const s2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 1.22, 0.08), wood);
+    s2.position.set(x, 1.62, 0.46); s2.rotation.z = side * 0.012;
+    g.add(s2);
+  }
+  // rigging
+  const wv = [];
+  for (const x of [side * 3.9, side * 2.72]) {
+    wv.push(x, 1.08, 0.82, x * 0.58, 2.2, 0.66);
+    wv.push(x, 1.08, 0.55, x * 0.58, 2.2, 0.4);
+  }
+  const wg = new THREE.BufferGeometry();
+  wg.setAttribute('position', new THREE.Float32BufferAttribute(wv, 3));
+  g.add(new THREE.LineSegments(wg, new THREE.LineBasicMaterial({ color: 0x2b2b24, transparent: true, opacity: 0.7 })));
+  // roundels sit on this wing half, so they vanish with it
+  const r1 = addRoundel(g, 0.6, side * 2.65, 2.35, 0.68, german);
+  const r2 = addRoundel(g, 0.55, side * 2.25, 1.13, 0.78, german);
+  g.userData.roundels = [r1, r2];
+  g.userData.top = top; g.userData.bottom = bot;
+  g.userData.ailerons = [top.userData.aileron, bot.userData.aileron];
+  g.userData.side = side;
+  parent.add(g);
+  return g;
 }
 
 export function buildPlane(type = 'camel') {
@@ -565,132 +663,162 @@ export function buildPlane(type = 'camel') {
   const wood = toonMat(PALETTE.woodDark);
   const rng = mulberry32(german ? 88 : 34);
 
-  // fuselage — tapered segments (rounded, organic)
+  // --- fuselage: tapered, faceted but rounded segments -------------------
   const fus = new THREE.Group();
   fus.position.set(0, 1.35, 0);
   group.add(fus);
   const segs = [
-    { z: 1.7, r1: 0.44, r2: 0.46, len: 0.9, color: bodyColor },
-    { z: 0.85, r1: 0.47, r2: 0.44, len: 0.85, color: bodyColor },
-    { z: 0.1, r1: 0.4, r2: 0.47, len: 0.7, color: bodyColor },
-    { z: -0.6, r1: 0.26, r2: 0.4, len: 0.8, color: bodyColor },
-    { z: -1.5, r1: 0.14, r2: 0.26, len: 0.9, color: bodyColor },
-    { z: -2.25, r1: 0.08, r2: 0.14, len: 0.6, color: bodyColor },
+    { z: 1.62, r1: 0.45, r2: 0.47, len: 0.9 },
+    { z: 0.8, r1: 0.48, r2: 0.45, len: 0.9 },
+    { z: 0.02, r1: 0.42, r2: 0.48, len: 0.75 },
+    { z: -0.7, r1: 0.28, r2: 0.42, len: 0.8 },
+    { z: -1.55, r1: 0.15, r2: 0.28, len: 0.9 },
+    { z: -2.3, r1: 0.08, r2: 0.15, len: 0.7 },
   ];
   for (const s of segs) {
-    const g = new THREE.CylinderGeometry(s.r1, s.r2, s.len, 12);
+    const g = new THREE.CylinderGeometry(s.r1, s.r2, s.len, 14);
     const m = new THREE.Mesh(g, bodyMat);
     m.rotation.x = Math.PI / 2;
     m.position.set(0, 0, s.z);
     m.castShadow = true;
     fus.add(m);
   }
-  // engine cowling
-  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.48, 0.55, 14), metal);
-  cowl.rotation.x = Math.PI / 2; cowl.position.set(0, 0, 2.25); cowl.castShadow = true;
+  // longitudinal stringers give the fuselage a built-up, non-boxy silhouette
+  for (let i = 0; i < 6; i++) {
+    const a = i / 6 * TAU + 0.26;
+    addBox(fus, 0.035, 0.035, 3.3, darkMat, Math.cos(a) * 0.36, Math.sin(a) * 0.3 - 0.03, -0.45, 0, 0, 0);
+  }
+  // engine cowling and rotary cylinders
+  const cowl = new THREE.Mesh(new THREE.CylinderGeometry(0.51, 0.49, 0.58, 16), metal);
+  cowl.rotation.x = Math.PI / 2; cowl.position.set(0, 0, 2.2); cowl.castShadow = true;
   fus.add(cowl);
-  // rotary engine cylinders
+  addTorus(fus, 0.5, 0.045, PALETTE.metal, 0, 0, 2.46, 0, 0, 0);
   for (let i = 0; i < 9; i++) {
     const a = i / 9 * TAU;
-    addCyl(fus, 0.075, 0.075, 0.35, 6, PALETTE.metal, Math.cos(a) * 0.42, Math.sin(a) * 0.42, 2.5, Math.PI / 2, 0, 0);
+    addCyl(fus, 0.072, 0.072, 0.34, 6, PALETTE.metal, Math.cos(a) * 0.42, Math.sin(a) * 0.42, 2.42, Math.PI / 2, 0, 0);
   }
-  // cockpit
-  const cockpit = addCyl(fus, 0.24, 0.24, 0.12, 12, PALETTE.black, 0, 0.4, 0.35, 0, 0, 0);
-  addTorus(fus, 0.25, 0.035, PALETTE.leather, 0, 0.45, 0.35, Math.PI / 2, 0, 0);
-  // pilot
-  addSphere(fus, 0.11, PALETTE.leather, 0, 0.58, 0.32, 1, 1.1, 1);
-  addSphere(fus, 0.1, 0xd0a077, 0, 0.6, 0.45, 0.9, 0.9, 0.9);
-  addBox(fus, 0.22, 0.26, 0.18, PALETTE.leatherDark, 0, 0.5, 0.22);
-  // guns
-  addCyl(fus, 0.04, 0.04, 0.5, 6, PALETTE.gunmetal, 0.14, 0.35, 1.6, Math.PI / 2, 0, 0);
-  addCyl(fus, 0.04, 0.04, 0.5, 6, PALETTE.gunmetal, -0.14, 0.35, 1.6, Math.PI / 2, 0, 0);
-  if (german) addBox(fus, 0.16, 0.1, 0.4, metal, 0, 0.28, 1.55);
+  // cockpit opening, leather coaming and windscreen
+  addCyl(fus, 0.25, 0.25, 0.12, 14, PALETTE.black, 0, 0.42, 0.3, 0, 0, 0);
+  addTorus(fus, 0.26, 0.04, PALETTE.leather, 0, 0.47, 0.3, Math.PI / 2, 0, 0);
+  addBox(fus, 0.42, 0.16, 0.02, 0x9fb0b8, 0, 0.52, 0.12, -0.22, 0, 0);
+  // pilot with helmet, goggles and scarf
+  addSphere(fus, 0.115, PALETTE.leather, 0, 0.53, 0.28, 1, 1.08, 1);
+  addSphere(fus, 0.105, 0xd0a077, 0, 0.56, 0.4, 0.92, 0.92, 0.92);
+  addBox(fus, 0.19, 0.035, 0.06, 0x1b1a17, 0, 0.585, 0.47);
+  addBox(fus, 0.28, 0.24, 0.2, PALETTE.leatherDark, 0, 0.47, 0.16);
+  addBox(fus, 0.34, 0.1, 0.16, 0xc9b58a, 0, 0.44, 0.2, 0, 0, 0.1);
+  // twin machine guns ahead of the cockpit
+  addCyl(fus, 0.042, 0.042, 0.5, 6, PALETTE.gunmetal, 0.13, 0.34, 1.5, Math.PI / 2, 0, 0);
+  addCyl(fus, 0.042, 0.042, 0.5, 6, PALETTE.gunmetal, -0.13, 0.34, 1.5, Math.PI / 2, 0, 0);
+  addBox(fus, 0.4, 0.09, 0.28, metal, 0, 0.32, 1.32);
+  if (german) addBox(fus, 0.16, 0.09, 0.34, metal, 0, 0.26, 1.42);
+  // exhaust stubs
+  for (const side of [1, -1]) addBox(fus, 0.1, 0.08, 0.22, PALETTE.metalDark, side * 0.42, 0.15, 1.9);
 
-  // propeller
+  // --- propeller ---------------------------------------------------------
   const prop = new THREE.Group();
-  prop.position.set(0, 1.35, 2.65);
+  prop.position.set(0, 1.35, 2.63);
   const bladeMat = toonMat(0x4a3320);
   for (const s of [1, -1]) {
-    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.16, 1.45, 0.07), bladeMat);
-    blade.position.y = s * 0.68;
+    const bgeo = new THREE.BoxGeometry(0.15, 1.42, 0.06);
+    const bp = bgeo.attributes.position;
+    for (let i = 0; i < bp.count; i++) {
+      const t = Math.abs(bp.getY(i)) / 0.71;
+      bp.setX(i, bp.getX(i) * (1 - t * 0.55));
+    }
+    bgeo.computeVertexNormals();
+    const blade = new THREE.Mesh(bgeo, bladeMat);
+    blade.position.y = s * 0.66;
     blade.rotation.z = s * 0.06;
     blade.castShadow = true;
     prop.add(blade);
   }
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.16, 8), metal);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.16, 10), metal);
   hub.rotation.x = Math.PI / 2; prop.add(hub);
   group.add(prop);
 
-  // wings
-  const topWing = wing(group, 8.6, 1.5, 0.14, 2.25, 0.55, bodyColor, bodyMat, 0.1);
-  const botWing = wing(group, 7.6, 1.35, 0.13, 1.0, 0.65, bodyColor, bodyMat, 0.1);
-  // wing ribs
-  for (const wy of [1.0, 2.25]) {
-    for (let i = -3; i <= 3; i++) {
-      addBox(group, 0.05, 0.035, 1.3, darkMat, i * 1.05, wy + 0.08, 0.6);
-    }
-  }
-  // struts
-  const strutGeo = new THREE.BoxGeometry(0.07, 1.25, 0.09);
-  for (const x of [-2.7, -1.1, 1.1, 2.7]) {
-    const s = new THREE.Mesh(strutGeo, wood);
-    s.position.set(x, 1.63, 0.7); s.rotation.z = x * 0.012;
-    s.castShadow = true; group.add(s);
-  }
-  // cabane struts
-  for (const x of [-0.45, 0.45]) {
-    const s = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.07), wood);
-    s.position.set(x, 1.8, 0.35); group.add(s);
-  }
-  // rigging wires
-  const wireMat = new THREE.LineBasicMaterial({ color: 0x2b2b24, transparent: true, opacity: 0.7 });
-  const wg = new THREE.BufferGeometry();
-  const wv = [];
-  for (const x of [-3.9, -2.7, 2.7, 3.9]) {
-    wv.push(x, 1.1, 0.7, x * 0.6, 2.2, 0.6);
-    wv.push(x, 1.1, 0.45, x * 0.6, 2.2, 0.35);
-  }
-  wg.setAttribute('position', new THREE.Float32BufferAttribute(wv, 3));
-  group.add(new THREE.LineSegments(wg, wireMat));
-  // roundels
-  addRoundel(group, 0.62, 2.6, 2.35, 0.55, german);
-  addRoundel(group, 0.62, -2.6, 2.35, 0.55, german);
-  addRoundel(group, 0.55, 2.3, 1.12, 0.65, german);
-  addRoundel(group, 0.55, -2.3, 1.12, 0.65, german);
-  // tail
-  addBox(group, 2.6, 0.08, 0.9, bodyColor, 0, 1.55, -2.35, 0, 0, 0, bodyMat);
-  addBox(group, 0.08, 1.0, 0.9, bodyColor, 0, 1.9, -2.45, 0, 0, 0, bodyMat);
-  // rudder (animated)
-  const rudder = new THREE.Group();
-  rudder.position.set(0, 1.9, -2.9);
-  const rg = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.95, 0.55), darkMat);
-  rg.position.z = -0.28; rg.castShadow = true;
-  rudder.add(rg);
-  group.add(rudder);
-  // elevators (animated)
-  const elevator = new THREE.Group();
-  elevator.position.set(0, 1.55, -2.75);
-  const eg = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.07, 0.5), bodyColor);
-  eg.position.z = -0.25; eg.castShadow = true;
-  elevator.add(eg);
-  group.add(elevator);
+  // --- wings (separate breakable sides) ---------------------------------
+  const wingL = buildSideWing(group, 1, german);
+  const wingR = buildSideWing(group, -1, german);
 
-  // undercarriage
+  // --- tail: tapered stabiliser halves and a real fin --------------------
+  const hStab = new THREE.Group();
+  hStab.position.set(0, 1.5, -2.25);
+  group.add(hStab);
   for (const side of [1, -1]) {
-    addCyl(group, 0.045, 0.045, 1.0, 6, metal, side * 0.55, 0.65, 1.05, 0, 0, side * 0.45);
-    const wheel = addCyl(group, 0.34, 0.34, 0.13, 12, 0x2b2822, side * 0.95, 0.36, 1.05, Math.PI / 2, 0, 0);
-    wheel.name = 'wheel';
-    addCyl(group, 0.1, 0.1, 0.15, 8, PALETTE.woodDark, side * 0.95, 0.36, 1.05, Math.PI / 2, 0, 0);
+    const geo = makeWingHalfGeometry(1.45, 0.82, 0.08, 0.02, 0.55);
+    const m = new THREE.Mesh(geo, bodyMat);
+    if (side < 0) m.rotation.y = Math.PI;
+    m.castShadow = true;
+    hStab.add(m);
   }
-  // tail skid
-  addCyl(group, 0.03, 0.03, 0.5, 5, wood, 0, 0.75, -2.1, 0, 0, 0.5);
-
-  // weathering patches
-  for (let i = 0; i < 8; i++) {
-    addSphere(group, 0.1 + rng() * 0.12, german ? 0x6f7f86 : 0x6d6a44, (rng() - 0.5) * 1.4, 1.15 + rng() * 0.9, (rng() - 0.5) * 3.4, 1.4, 0.3, 1.4);
+  // elevators: hinged trailing surfaces
+  const elevators = [];
+  for (const side of [1, -1]) {
+    const pivot = new THREE.Group();
+    pivot.position.set(0, 1.5, -2.66);
+    const eg = new THREE.BoxGeometry(2.65, 0.075, 0.36);
+    eg.translate(0, 0, -0.18);
+    const em = new THREE.Mesh(eg, toonMat(bodyColor));
+    em.castShadow = true;
+    pivot.add(em);
+    pivot.userData.side = side;
+    group.add(pivot);
+    elevators.push(pivot);
   }
+  // vertical fin (extruded tapered plate) and rudder
+  const finShape = new THREE.Shape();
+  finShape.moveTo(-0.72, 0);
+  finShape.lineTo(0.28, 0);
+  finShape.lineTo(0.2, 0.55);
+  finShape.lineTo(-0.18, 1.05);
+  finShape.lineTo(-0.78, 1.05);
+  finShape.lineTo(-0.92, 0.42);
+  finShape.closePath();
+  const finGeo = new THREE.ExtrudeGeometry(finShape, { depth: 0.075, bevelEnabled: true, bevelSize: 0.015, bevelThickness: 0.015, bevelSegments: 1 });
+  finGeo.translate(0, 0, -0.0375);
+  const fin = new THREE.Mesh(finGeo, bodyMat);
+  fin.rotation.y = Math.PI / 2;
+  fin.position.set(0, 1.58, -2.5);
+  fin.castShadow = true;
+  group.add(fin);
+  const rudderPivot = new THREE.Group();
+  rudderPivot.position.set(0, 1.9, -3.24);
+  const rg = new THREE.BoxGeometry(0.065, 1.0, 0.44);
+  rg.translate(0, 0, -0.22);
+  const rudderMesh = new THREE.Mesh(rg, toonMat(bodyColor));
+  rudderMesh.castShadow = true;
+  rudderPivot.add(rudderMesh);
+  group.add(rudderPivot);
+  // fin bracing wires
+  const finWire = new THREE.BufferGeometry();
+  finWire.setAttribute('position', new THREE.Float32BufferAttribute([
+    -0.9, 1.55, -2.2, -0.55, 2.55, -2.9,
+    0.9, 1.55, -2.2, 0.55, 2.55, -2.9,
+  ], 3));
+  group.add(new THREE.LineSegments(finWire, new THREE.LineBasicMaterial({ color: 0x2b2b24, transparent: true, opacity: 0.7 })));
 
-  group.userData = { type, propeller: prop, rudder, elevator, topWing, botWing, cowl, german };
+  // --- undercarriage -----------------------------------------------------
+  const wheels = [];
+  for (const side of [1, -1]) {
+    addCyl(group, 0.045, 0.045, 1.05, 6, metal, side * 0.55, 0.68, 1.02, 0, 0, side * 0.45);
+    addBox(group, 0.06, 0.06, 0.8, wood, side * 0.85, 0.5, 1.02);
+    const wg = new THREE.CylinderGeometry(0.34, 0.34, 0.14, 14).rotateX(Math.PI / 2);
+    const wheel = new THREE.Mesh(wg, toonMat(0x2b2822));
+    wheel.position.set(side * 0.95, 0.36, 1.05);
+    wheel.castShadow = true;
+    group.add(wheel);
+    const hubm = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.16, 8).rotateX(Math.PI / 2), toonMat(PALETTE.woodDark));
+    wheel.add(hubm);
+    wheels.push(wheel);
+  }
+  addCyl(group, 0.03, 0.03, 0.52, 5, wood, 0, 0.75, -2.05, 0, 0, 0.5);
+
+  group.userData = {
+    type, propeller: prop, rudder: rudderPivot, elevator: elevators[0], elevators,
+    wingL, wingR, hStab, fin, rudderMesh, wheels,
+    topWing: wingL.userData.top, botWing: wingL.userData.bottom, german,
+  };
   return group;
 }
 
@@ -867,6 +995,59 @@ export function buildBunker() {
   addBox(group, 0.9, 1.9, 0.1, 0x2c2a22, -2.2, 0.95, 2.52);
   // roof beams
   for (let i = -2; i <= 2; i++) addBox(group, 0.25, 0.25, 5.2, PALETTE.woodDark, i * 1.3, 3.15, 0);
+  return group;
+}
+
+export function buildMGBunker(team = 'british', level = 2) {
+  const group = new THREE.Group();
+  const german = team === 'german';
+  const wallColor = german ? 0x6f6d5b : 0x8a7a56;
+  const wallMat = toonMat(wallColor);
+  const timber = toonMat(PALETTE.woodDark);
+  const rng = mulberry32(german ? 717 : 313);
+  // low concrete/timber box with an open rear and a wide firing slit
+  addBox(group, 2.9, 0.55, 2.5, wallColor, 0, 0.28, 0, 0, 0, 0, wallMat);
+  addBox(group, 2.9, 1.25, 0.32, wallColor, 0, 1.0, 1.18, 0, 0, 0, wallMat);
+  addBox(group, 2.9, 1.25, 0.32, wallColor, 0, 1.0, -1.18, 0, 0, 0, wallMat);
+  addBox(group, 0.32, 1.25, 2.2, wallColor, -1.42, 1.0, 0, 0, 0, 0, wallMat);
+  addBox(group, 0.32, 1.25, 2.2, wallColor, 1.42, 1.0, 0, 0, 0, 0, wallMat);
+  // firing slit
+  addBox(group, 1.7, 0.34, 0.1, PALETTE.black, 0, 1.52, 1.36);
+  addBox(group, 1.9, 0.12, 0.34, german ? 0x4d4b3d : 0x6b5b3d, 0, 1.72, 1.32, 0.1);
+  // roof
+  addBox(group, 3.2, 0.18, 2.8, german ? 0x5a5848 : 0x735f3e, 0, 1.88, 0);
+  for (let i = -1; i <= 1; i++) addBox(group, 3.3, 0.13, 0.18, timber, 0, 2.0, i * 0.85);
+  // sandbag cushioning around the sides and front (instanced)
+  const bagGeo = new THREE.SphereGeometry(0.2, 6, 4);
+  const bags = new THREE.InstancedMesh(bagGeo, toonMat(german ? PALETTE.sandbagDark : PALETTE.sandbag), 80);
+  bags.castShadow = true; bags.receiveShadow = true;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  let bi = 0;
+  const addBag = (x, y, z) => {
+    if (bi >= 80) return;
+    q.setFromEuler(new THREE.Euler(0, rng() * 0.4 - 0.2, 0));
+    v.set(x, y, z);
+    sc.set(1.3, 0.7, 0.9);
+    m4.compose(v, q, sc);
+    bags.setMatrixAt(bi++, m4);
+  };
+  for (const [sx, sz] of [[0, 1.55], [1.6, 0], [-1.6, 0]]) {
+    for (let r = 0; r < 2; r++) {
+      for (let i = -3; i <= 3; i++) {
+        if (sx === 0) addBag(i * 0.42, 0.2 + r * 0.3, 1.55 + sz - 1.55);
+        else addBag(sx + Math.sign(sx) * r * 0.1, 0.2 + r * 0.3, i * 0.38);
+      }
+    }
+  }
+  bags.count = bi;
+  group.add(bags);
+  // extra armour for level 3
+  if (level >= 3) {
+    addBox(group, 3.0, 0.1, 2.6, 0x3c3a30, 0, 2.12, 0);
+    addBox(group, 2.4, 0.55, 0.12, 0x3c3a30, 0, 1.1, 1.38);
+    addBox(group, 2.4, 0.55, 0.12, 0x3c3a30, 0, 1.1, -1.38);
+  }
+  group.userData = { slit: new THREE.Vector3(0, 1.52, 1.4), team, level };
   return group;
 }
 

@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { heightAt, trenchDepthAt, WORLD } from './world.js';
 import {
-  buildSoldier, buildMarkI, buildA7V, buildPlane, buildVickersMG, buildParachute, PALETTE, toonMat, addSphere, addBox,
+  buildSoldier, buildMarkI, buildA7V, buildPlane, buildVickersMG, buildParachute,
+  buildMGBunker, PALETTE, toonMat, addSphere, addBox,
 } from './models.js';
 import { Ragdoll } from './ragdoll.js';
 import { clamp, lerp, damp, TAU, mulberry32 } from './util.js';
@@ -239,7 +240,29 @@ export class StaticMG {
     this.built = false;
     this.target = null;
     this.spin = 0;
+    // The gun rotates independently of the field works around it.
+    this.bunker = new THREE.Group();
+    this.bunker.position.set(site.x, site.y, site.z);
+    this.bunker.rotation.y = this.baseYaw;
+    game.scene.add(this.bunker);
+    this.bunkerLevel = 0;
     this.game.mgs.push(this);
+  }
+
+  refreshBunker() {
+    const lvl = this.level >= 3 ? 3 : this.level >= 2 ? 2 : 0;
+    if (lvl === this.bunkerLevel) return;
+    this.bunkerLevel = lvl;
+    while (this.bunker.children.length) {
+      const c = this.bunker.children[this.bunker.children.length - 1];
+      this.bunker.remove(c);
+      c.traverse?.((o) => { if (o.isMesh && o.geometry?.userData?.temp) o.geometry.dispose(); });
+    }
+    if (lvl >= 2) {
+      const works = buildMGBunker(this.team, lvl);
+      this.bunker.add(works);
+      this.bunkerBuilt = true;
+    }
   }
 
   upgrade() {
@@ -251,8 +274,10 @@ export class StaticMG {
     this.maxAmmo += 250;
     this.ammo = this.maxAmmo;
     this.damageMul += 0.3;
-    // better sandbags / reinforced mount
+    // level 2 turns the scrape into a proper protected bunker, level 3 adds
+    // armour plates and a heavier mounting
     this.group.scale.setScalar(1 + (this.level - 1) * 0.05);
+    this.refreshBunker();
     return true;
   }
 
@@ -357,7 +382,14 @@ export class Tank {
     this.game = game;
     this.team = opts.team;
     this.type = opts.type || 'mark1';
-    this.group = this.type === 'mark1' ? buildMarkI() : buildA7V();
+    // Models are authored with +X as the nose; rotate the visual inside the
+    // entity group so the shared +Z forward convention works for movement,
+    // steering, cameras and weapon muzzles alike.
+    this.visual = this.type === 'mark1' ? buildMarkI() : buildA7V();
+    this.visual.rotation.y = -Math.PI / 2;
+    this.group = new THREE.Group();
+    this.group.add(this.visual);
+    this.group.userData = this.visual.userData;
     this.pos = new THREE.Vector3(opts.x, heightAt(opts.x, opts.z), opts.z);
     this.yaw = opts.yaw ?? 0;
     this.speed = 0;
@@ -417,7 +449,7 @@ export class Tank {
       const shoulders = addBox(g, 0.4, 0.18, 0.26, this.team === 'british' ? PALETTE.khaki : PALETTE.fieldgrey, 0, -0.06, 0);
       g.position.set(p[0], p[1], p[2]);
       g.visible = false;
-      this.group.add(g);
+      this.visual.add(g);
       this.crewHeads[name] = g;
     }
   }
@@ -524,23 +556,42 @@ export class Tank {
       }
     }
 
-    // track plates / road wheels
+    // track plates / road wheels — continuous, speed-matched, reversible
     for (const tr of this.tracks) {
       const n = tr.path.length;
       const dummy = this._dummy || (this._dummy = new THREE.Object3D());
-      for (let i = 0; i < tr.plates.count; i++) {
-        const idx = ((i + Math.floor(this.trackDist * 4)) % n + n) % n;
-        const p = tr.path[idx];
-        const p2 = tr.path[(idx + 1) % n];
-        dummy.position.set(p.x, 1.25 + p.y, tr.side * 1.72);
-        dummy.rotation.set(0, 0, Math.atan2(p2.y - p.y, p2.x - p.x));
+      if (!tr.pathLen) {
+        let l = 0;
+        for (let i = 0; i < n; i++) {
+          const a = tr.path[i], b = tr.path[(i + 1) % n];
+          l += Math.hypot(b.x - a.x, b.y - a.y);
+        }
+        tr.pathLen = l || 1;
+        tr.spacing = tr.pathLen / tr.plates.count;
+      }
+      const phase = -this.trackDist / tr.spacing;
+      const count = tr.plates.count;
+      for (let i = 0; i < count; i++) {
+        let f = (i + phase) % n;
+        if (f < 0) f += n;
+        const i0 = Math.floor(f);
+        const frac = f - i0;
+        const p = tr.path[i0];
+        const p2 = tr.path[(i0 + 1) % n];
+        dummy.position.set(
+          p.x + (p2.x - p.x) * frac,
+          (tr.baseY ?? 1.25) + p.y + (p2.y - p.y) * frac,
+          tr.side * ((tr.width ?? 1.5) + 0.16),
+        );
+        const ang = Math.atan2(p2.y - p.y, p2.x - p.x);
+        dummy.rotation.set(0, 0, ang);
         dummy.updateMatrix();
         tr.plates.setMatrixAt(i, dummy.matrix);
       }
       tr.plates.instanceMatrix.needsUpdate = true;
-      for (const w of tr.wheels) w.rotation.z += this.speed * dt * 1.2;
+      for (const w of (tr.spinners || [])) w.rotation.z -= this.speed * dt * 2.35;
     }
-    for (const w of (this.group.userData.wheels || [])) w.rotation.z += this.speed * dt * 1.6;
+    for (const w of (this.visual.userData.wheels || [])) w.rotation.z -= this.speed * dt * 1.6;
 
     // smoke from exhaust / damage
     this.smokeT -= dt;
@@ -573,6 +624,12 @@ export class Tank {
         const dist = Math.sqrt(dx * dx + dz * dz);
         const ang = Math.atan2(dx, dz);
         let diff = ((ang - this.yaw + Math.PI * 3) % TAU) - Math.PI;
+        // elevate the visible cannon towards the target
+        const cp = this.visual.userData.cannonPivot;
+        if (cp) {
+          const elev = Math.atan2(targetPos.y - (this.pos.y + 2.1), Math.max(1, dist));
+          cp.rotation.z = damp(cp.rotation.z, clamp(elev, -0.12, 0.5), 2.8, dt);
+        }
         if (dist < 130) {
           const side = diff > 0 ? 1 : -1;
           const idx = side > 0 ? 0 : 1;
@@ -593,7 +650,7 @@ export class Tank {
   fireCannon(targetPos) {
     if (!this.alive) return;
     const local = (this.type === 'a7v' ? new THREE.Vector3(3.55, 2.12, 0) : new THREE.Vector3(1.55, 2.05, 0.15))
-      .applyAxisAngle(UP, this.yaw);
+      .applyAxisAngle(UP, this.yaw - Math.PI / 2);
     const from = this.pos.clone().add(local);
     from.y += 0.25;
     const dir = targetPos.clone().sub(from).normalize();
@@ -614,7 +671,7 @@ export class Tank {
 
   fireMG(side, targetPos) {
     const local = new THREE.Vector3(0.9, 1.62, side * 2.6);
-    local.applyAxisAngle(UP, this.yaw);
+    local.applyAxisAngle(UP, this.yaw - Math.PI / 2);
     const from = this.pos.clone().add(local);
     from.y += 0.1;
     const to = targetPos.clone();
@@ -637,7 +694,7 @@ export class Tank {
   getSeatWorld(seat, out = new THREE.Vector3()) {
     const p = seat === 'driver' ? [1.5, 3.05, 0] : seat === 'gunnerL' ? [0.9, 2.1, 2.15] : [0.9, 2.1, -2.15];
     out.set(p[0], p[1], p[2]);
-    out.applyAxisAngle(UP, this.yaw);
+    out.applyAxisAngle(UP, this.yaw - Math.PI / 2);
     return out.add(this.pos);
   }
 }
@@ -663,10 +720,13 @@ export class Plane {
     this.onGround = true;
     this.alive = true;
     this.crashed = false;
-    this.health = 180;
+    this.crashing = false;
+    this.broken = false;
+    this.impacted = false;
+    this.health = 190;
     this.modules = { engine: 100, wingL: 100, wingR: 100, tail: 100, pilot: 100 };
     this.controls = { pitch: 0, roll: 0, yaw: 0 };
-    this.pilot = null; // 'player' | 'bot'
+    this.pilot = null;
     this.pilotSoldier = null;
     this.bailed = false;
     this.groundTime = 0;
@@ -679,12 +739,23 @@ export class Plane {
     this.destroyedAt = 0;
     this.deadTimer = 0;
     this.lastDamage = 0;
+    // stable flight state — never allowed to settle inverted
+    this.pitchAngle = 0;
+    this.rollAngle = 0;
+    this.flightSpeed = 0;
+    this.wingBrokenL = false;
+    this.wingBrokenR = false;
+    this.tailBroken = false;
+    this.pilotUnconscious = false;
+    this.gStress = 0;
+    this.glocRolled = false;
     this.group.position.copy(this.pos);
     this.group.quaternion.copy(this.quat);
     game.scene.add(this.group);
     this.prop = this.group.userData.propeller;
     this.rudder = this.group.userData.rudder;
-    this.elevator = this.group.userData.elevator;
+    this.elevators = this.group.userData.elevators || [this.group.userData.elevator].filter(Boolean);
+    this.wheels = this.group.userData.wheels || [];
     game.planes.push(this);
   }
 
@@ -701,27 +772,70 @@ export class Plane {
     }
   }
 
+  /* ---------------- damage / module failure ---------------- */
   hit(dmg, from, dir, moduleName = null) {
     if (!this.alive) return;
     this.lastDamage = this.game.time;
     const names = ['engine', 'wingL', 'wingR', 'tail', 'pilot'];
     const m = moduleName || names[Math.floor(Math.random() * names.length)];
     this.modules[m] = Math.max(0, this.modules[m] - dmg);
-    this.health -= dmg * 0.45;
-    this.game.effects.sparks(this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 3)), 4);
+    this.health -= dmg * 0.42;
+    const hitPos = this.pos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, (Math.random() - 0.5) * 1.5, (Math.random() - 0.5) * 3));
+    this.game.effects.sparks(hitPos, 5);
+    if (m === 'wingL' && this.modules.wingL <= 0 && !this.wingBrokenL) this.detachWing(-1);
+    if (m === 'wingR' && this.modules.wingR <= 0 && !this.wingBrokenR) this.detachWing(1);
+    if (m === 'tail' && this.modules.tail <= 0 && !this.tailBroken) this.detachTail();
     if (m === 'pilot') {
-      this.game.hud?.message('Пилот ранен!', 1.2);
+      this.game.hud?.message('Пилот ранен!', 1.1);
       if (this.modules.pilot <= 0) {
-        this.game.hud?.message('Пилот убит!', 1.6);
-        if (this.pilot === 'bot') this.botBail(true);
-        else if (this.pilot === 'player') this.game.playerPlaneHit?.(100);
+        this.game.hud?.message('Пилот без сознания — самолёт падает!', 2.2);
+        this.pilotUnconscious = true;
+        if (this.pilot === 'bot') this.botBail(false);
       }
     }
-    if (this.health <= 0 || (this.modules.engine <= 0 && this.modules.wingL <= 0 && this.modules.wingR <= 0)) {
-      this.destroy('shot');
-    } else if (this.pilot === 'bot' && (this.health < 55 || this.modules.engine <= 0)) {
-      this.botBail(false);
+    if (this.health <= 0) this.destroy('shot');
+    else if (this.pilot === 'bot' && (this.health < 50 || this.modules.engine <= 0)) this.botBail(false);
+  }
+
+  detachWing(side) {
+    const g = side > 0 ? this.group.userData.wingL : this.group.userData.wingR;
+    if (side > 0) {
+      if (this.wingBrokenL) return;
+      this.wingBrokenL = true;
+    } else {
+      if (this.wingBrokenR) return;
+      this.wingBrokenR = true;
     }
+    if (!g) return;
+    g.updateWorldMatrix(true, false);
+    const wp = g.getWorldPosition(new THREE.Vector3());
+    const wq = g.getWorldQuaternion(new THREE.Quaternion());
+    const clone = g.clone(true);
+    g.visible = false;
+    const vel = this.vel.clone().multiplyScalar(0.55).add(new THREE.Vector3(
+      (Math.random() - 0.5) * 7, 2 + Math.random() * 5, (Math.random() - 0.5) * 7,
+    ));
+    const spin = new THREE.Vector3((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 7, (Math.random() - 0.5) * 6);
+    this.game.effects.detachedPart(clone, wp, wq, vel, spin, 16);
+    this.game.hud?.message(side > 0 ? 'Левое крыло оторвано!' : 'Правое крыло оторвано!', 1.8);
+    this.game.audio?.explosion(this.pos, 0.8);
+  }
+
+  detachTail() {
+    if (this.tailBroken) return;
+    this.tailBroken = true;
+    const parts = [this.group.userData.fin, this.group.userData.hStab, this.rudder, ...(this.elevators || [])].filter(Boolean);
+    const anchor = parts.find((p) => p.visible) || this.group;
+    anchor.updateWorldMatrix(true, false);
+    const wp = anchor.getWorldPosition(new THREE.Vector3());
+    const wq = anchor.getWorldQuaternion(new THREE.Quaternion());
+    for (const p of parts) p.visible = false;
+    const clone = this.group.userData.fin?.clone(true);
+    if (clone) {
+      const vel = this.vel.clone().multiplyScalar(0.5).add(new THREE.Vector3((Math.random() - 0.5) * 5, 1 + Math.random() * 4, (Math.random() - 0.5) * 5));
+      this.game.effects.detachedPart(clone, wp, wq, vel, new THREE.Vector3(1.5, 3, 2), 14);
+    }
+    this.game.hud?.message('Хвост разрушен!', 1.8);
   }
 
   botBail(dead) {
@@ -729,14 +843,15 @@ export class Plane {
     this.bailed = true;
     if (!dead && this.altitude > 18) {
       this.game.spawnParachute(this.pos.clone(), this.team, false);
-      this.game.hud?.message('Немецкий/британский пилот выпрыгнул с парашютом', 1.6);
+      this.game.hud?.message('Пилот выпрыгнул с парашютом', 1.6);
     }
     if (this.pilotSoldier) {
       const s = this.pilotSoldier;
       s.x = this.pos.x; s.y = this.pos.y; s.z = this.pos.z;
       s.inVehicle = null;
       s.group.visible = false;
-      s.die(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.6, (Math.random() - 0.5) * 0.6), this.pos);
+      if (dead || !this.altitude) s.die(new THREE.Vector3((Math.random() - 0.5) * 0.6, 0.6, (Math.random() - 0.5) * 0.6), this.pos);
+      else s.dead = true;
       this.pilotSoldier = null;
     }
     this.pilot = null;
@@ -747,36 +862,80 @@ export class Plane {
     this.alive = false;
     this.crashed = true;
     this.destroyedAt = this.game.time;
-    const groundY = heightAt(this.pos.x, this.pos.z);
-    if (this.altitude > 3) {
-      // dive to ground with a trail of fire, explode on impact
+    const alt = this.altitude;
+    if (alt > 3) {
       this.crashing = true;
-      this.game.effects.explosion(this.pos.clone(), 1.6);
+      this.impacted = false;
+      this.game.effects.explosion(this.pos.clone(), 1.5);
       this.game.audio?.explosion(this.pos, 1);
+      // keep the wreck falling; it breaks up on impact
+      this.vel.y = Math.min(this.vel.y, -6);
     } else {
-      this.game.effects.explosion(this.pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 2.6);
+      this.game.effects.explosion(this.pos.clone().add(new THREE.Vector3(0, 0.5, 0)), 2.8);
       this.game.audio?.explosion(this.pos, 1.4);
-      this.crashing = false;
+      this.breakApart();
     }
-    if (this.pilot === 'player') this.game.playerPlaneHit?.(100);
-    if (this.pilot === 'bot' || this.pilot === 'player') this.botBail(true);
+    if (this.pilot === 'bot' && !this.bailed) this.botBail(this.modules.pilot <= 0);
     this.game.onPlaneDestroyed(this);
-    // hide top wing for broken look
-    if (this.group.userData.topWing) this.group.userData.topWing.visible = false;
-    this.game.effects.debris(this.pos.clone(), 10, this.team === 'british' ? 0x6f6a42 : 0x5f6a72);
+  }
+
+  breakApart() {
+    if (this.broken) return;
+    this.broken = true;
+    this.crashing = false;
+    this.detachWing(1);
+    this.detachWing(-1);
+    this.detachTail();
+    // scatter recognisable pieces of the airframe
+    const color = this.team === 'british' ? 0x6f6a42 : 0x5f6a72;
+    this.game.effects.debris(this.pos.clone(), 18, color);
+    const rng = mulberry32(Math.floor(this.pos.x * 17 + this.pos.z * 31) >>> 0);
+    for (let i = 0; i < 6; i++) {
+      const g = new THREE.Group();
+      addBox(g, 0.7 + rng() * 0.7, 0.08 + rng() * 0.15, 1.0 + rng(), i % 2 ? color : PALETTE.woodDark, 0, 0, 0);
+      g.position.copy(this.pos).add(new THREE.Vector3((rng() - 0.5) * 3, 0.6 + rng(), (rng() - 0.5) * 3));
+      this.game.scene.add(g);
+      this.game.effects.detachedPart(g, g.position.clone(), new THREE.Quaternion(), new THREE.Vector3((rng() - 0.5) * 10, 3 + rng() * 7, (rng() - 0.5) * 10), new THREE.Vector3(rng() * 8, rng() * 8, rng() * 8), 12);
+    }
+    if (this.pilot === 'player') {
+      this.game.playerPlaneHit?.(100);
+      this.pilot = null;
+    } else if (this.pilot === 'bot') {
+      if (this.pilotSoldier) {
+        const s = this.pilotSoldier;
+        s.x = this.pos.x; s.y = this.pos.y; s.z = this.pos.z;
+        s.inVehicle = null;
+        s.group.visible = false;
+        s.die(new THREE.Vector3((Math.random() - 0.5) * 2, 1.2, (Math.random() - 0.5) * 2), this.pos);
+        this.pilotSoldier = null;
+      }
+      this.pilot = null;
+    }
+    this.group.visible = false;
   }
 
   reset(x, z, yaw) {
     this.alive = true;
     this.crashed = false;
     this.crashing = false;
+    this.broken = false;
+    this.impacted = false;
     this.deadTimer = 0;
     this.destroyedAt = 0;
-    this.health = 180;
+    this.health = 190;
     this.modules = { engine: 100, wingL: 100, wingR: 100, tail: 100, pilot: 100 };
     this.pilot = null;
     this.pilotSoldier = null;
     this.bailed = false;
+    this.pitchAngle = 0;
+    this.rollAngle = 0;
+    this.flightSpeed = 0;
+    this.wingBrokenL = false;
+    this.wingBrokenR = false;
+    this.tailBroken = false;
+    this.pilotUnconscious = false;
+    this.gStress = 0;
+    this.glocRolled = false;
     this.pos.set(x, heightAt(x, z) + 0.06, z);
     this.yaw = yaw;
     this.quat.setFromEuler(new THREE.Euler(0, yaw, 0));
@@ -790,34 +949,39 @@ export class Plane {
     this.group.visible = true;
     this.group.position.copy(this.pos);
     this.group.quaternion.copy(this.quat);
-    if (this.group.userData.topWing) this.group.userData.topWing.visible = true;
+    const u = this.group.userData;
+    if (u.wingL) u.wingL.visible = true;
+    if (u.wingR) u.wingR.visible = true;
+    if (u.fin) u.fin.visible = true;
+    if (u.hStab) u.hStab.visible = true;
+    if (u.rudder) u.rudder.visible = true;
+    for (const e of this.elevators || []) e.visible = true;
+    this.elevators = u.elevators || this.elevators;
+    this.wheels = u.wheels || [];
   }
 
   update(dt) {
     if (!this.alive) {
       this.deadTimer += dt;
       if (this.crashing) {
-        // fall and burn
-        this.pos.y -= 12 * dt;
-        this.pos.x += this.vel.x * dt;
-        this.pos.z += this.vel.z * dt;
-        this.group.rotation.z += dt * 2;
+        this.vel.y -= 15 * dt;
+        this.pos.addScaledVector(this.vel, dt);
         this.group.position.copy(this.pos);
+        this.group.rotation.z += dt * 1.7;
+        this.group.rotation.x += dt * 0.8;
         this.fireT -= dt;
         if (this.fireT <= 0) {
           this.fireT = 0.05;
-          this.game.effects.smoke(this.pos.clone(), 3.0, [0.12, 0.11, 0.1], 1, 1.4, 5);
+          this.game.effects.smoke(this.pos.clone(), 3.4, [0.12, 0.11, 0.1], 1, 1.4, 5);
           this.game.effects.fire(this.pos.clone());
         }
         const gy = heightAt(this.pos.x, this.pos.z);
-        if (this.pos.y <= gy + 0.4) {
-          this.pos.y = gy + 0.4;
-          this.crashing = false;
-          this.game.effects.explosion(this.pos.clone(), 4.0);
+        if (this.pos.y <= gy + 0.3 && !this.impacted) {
+          this.impacted = true;
+          this.pos.y = gy + 0.25;
+          this.game.effects.explosion(this.pos.clone(), 4.2);
           this.game.audio?.explosion(this.pos, 1.6);
-          this.game.effects.debris(this.pos.clone(), 16, 0x5f5a3c);
-          this.group.rotation.z = 1.2;
-          this.group.position.copy(this.pos);
+          this.breakApart();
         }
       } else {
         this.fireT -= dt;
@@ -831,115 +995,113 @@ export class Plane {
     }
 
     this.airTime = this.onGround ? 0 : this.airTime + dt;
-    const controlled = this.pilot === 'player' || this.pilot === 'bot';
+    const controlled = (this.pilot === 'player' || this.pilot === 'bot') && !this.pilotUnconscious;
     const authority = this.modules.pilot > 0 ? 1 : 0;
-    const tailAuth = 0.35 + 0.65 * (this.modules.tail / 100);
-    const wingAuth = 0.4 + 0.6 * ((this.modules.wingL + this.modules.wingR) / 200);
+    const tailAuth = this.tailBroken ? 0.18 : 0.4 + 0.6 * (this.modules.tail / 100);
+    const wingAuth = this.wingBrokenL || this.wingBrokenR ? 0.25 : 0.4 + 0.6 * ((this.modules.wingL + this.modules.wingR) / 200);
     const engineAuth = this.modules.engine / 100;
 
     if (this.onGround) {
       this.groundTime += dt;
       const gy = heightAt(this.pos.x, this.pos.z) + 0.06;
       this.pos.y = damp(this.pos.y, gy, 10, dt);
-      // Settle firmly upright.  Planes used to keep a rolled/pitched quat
-      // after touchdown and could end up taxiing upside-down.
       const yaw = this.yaw;
-      const hf = heightAt(this.pos.x + Math.sin(yaw) * 2.4, this.pos.z + Math.cos(yaw) * 2.4);
-      const hb = heightAt(this.pos.x - Math.sin(yaw) * 2.4, this.pos.z - Math.cos(yaw) * 2.4);
-      const slopePitch = clamp(Math.atan2(hf - hb, 4.8), -0.16, 0.16);
-      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-slopePitch, yaw, 0, 'YXZ'));
-      const upDot = _v2.set(0, 1, 0).applyQuaternion(this.quat).y;
-      this.quat.slerp(targetQ, 1 - Math.exp(-(upDot < 0.7 ? 22 : 9) * dt));
-      const hSpd = Math.hypot(this.vel.x, this.vel.z);
       const fx = Math.sin(yaw), fz = Math.cos(yaw);
+      const hSpd = Math.hypot(this.vel.x, this.vel.z);
       if (controlled) {
-        // keep ground velocity horizontal regardless of quat
         this.vel.x = fx * hSpd;
         this.vel.z = fz * hSpd;
         if (this.throttle > 0.02) {
-          this.vel.x += fx * 8.5 * this.throttle * engineAuth * dt;
-          this.vel.z += fz * 8.5 * this.throttle * engineAuth * dt;
+          this.vel.x += fx * 9.5 * this.throttle * engineAuth * dt;
+          this.vel.z += fz * 9.5 * this.throttle * engineAuth * dt;
         }
+        this.yaw += this.controls.yaw * dt * (hSpd > 1 ? 1.15 : 0.35);
       }
-      this.vel.x *= Math.exp(-(controlled ? 0.12 : 1.8) * dt);
-      this.vel.z *= Math.exp(-(controlled ? 0.12 : 1.8) * dt);
+      this.vel.x *= Math.exp(-(controlled ? 0.16 : 1.8) * dt);
+      this.vel.z *= Math.exp(-(controlled ? 0.16 : 1.8) * dt);
       this.vel.y = 0;
       this.pos.addScaledVector(this.vel, dt);
       const spd = Math.hypot(this.vel.x, this.vel.z);
-      // fast, readable ground steering
-      this.yaw += this.controls.yaw * dt * (spd > 1 ? 1.45 : 0.4);
-      // takeoff
+      this.flightSpeed = spd;
+      this.pitchAngle = damp(this.pitchAngle, 0, 6, dt);
+      this.rollAngle = damp(this.rollAngle, 0, 6, dt);
+      const hf = heightAt(this.pos.x + Math.sin(yaw) * 2.4, this.pos.z + Math.cos(yaw) * 2.4);
+      const hb = heightAt(this.pos.x - Math.sin(yaw) * 2.4, this.pos.z - Math.cos(yaw) * 2.4);
+      const slopePitch = clamp(Math.atan2(hf - hb, 4.8), -0.14, 0.14);
+      const targetQ = new THREE.Quaternion().setFromEuler(new THREE.Euler(-slopePitch, yaw, 0, 'YXZ'));
+      this.quat.slerp(targetQ, 1 - Math.exp(-9 * dt));
       if (controlled && this.throttle > 0.6 && spd > 22) {
         this.onGround = false;
-        this.vel.y = 6.2;
-        this.pos.y += 0.55;
-        this.takeoffBoost = 2.6;
-        this.quat.setFromEuler(new THREE.Euler(-0.12, this.yaw, 0, 'YXZ'));
-        this.game.hud?.message('Отрыв!', 1.2);
+        this.flightSpeed = Math.max(30, spd);
+        this.vel.y = 3.2;
+        this.pos.y += 0.5;
+        this.pitchAngle = 0.15;
+        this.game.hud?.message('Отрыв!', 1.1);
       }
       if (!controlled) this.throttle = 0;
       this.group.position.copy(this.pos);
       this.group.quaternion.copy(this.quat);
+      // wheels roll on the ground
+      for (const w of this.wheels) w.rotation.z -= spd * dt / 0.34;
     } else {
-      // flight model
-      const speed = this.speed;
-      const wingFactor = (this.modules.wingL + this.modules.wingR) / 200;
+      // ---- stable, bank-to-turn flight model -----------------------------
       if (controlled) {
-        const pitchRate = 1.5 * authority * tailAuth;
-        const rollRate = 3.0 * authority * wingAuth;
-        const yawRate = 1.35 * authority * tailAuth;
-        const pitch = clamp(this.controls.pitch, -1, 1);
-        const roll = clamp(this.controls.roll, -1, 1);
-        const yaw = clamp(this.controls.yaw, -1, 1);
-        _q1.setFromEuler(new THREE.Euler(-pitch * pitchRate * dt, yaw * yawRate * dt, -roll * rollRate * dt, 'YXZ'));
-        this.quat.multiply(_q1);
-        this.quat.normalize();
-        // asymmetric wing damage roll
-        const wingBias = (this.modules.wingR - this.modules.wingL) / 100;
-        this.quat.multiply(_q2.setFromEuler(new THREE.Euler(0, 0, wingBias * 0.5 * dt)));
-        // Never let the aircraft settle inverted; auto-level when the stick
-        // is released, and strongly correct if the canopy points at the ground.
-        const upNow = _v3.set(0, 1, 0).applyQuaternion(this.quat);
-        const handsOff = Math.abs(pitch) < 0.08 && Math.abs(roll) < 0.08;
-        if (upNow.y < 0.18 || (handsOff && upNow.y < 0.9)) {
-          const fwdNow = this.forward;
-          const flat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(fwdNow.x, fwdNow.z), 0, 'YXZ'));
-          this.quat.slerp(flat, 1 - Math.exp(-(upNow.y < 0.18 ? 2.4 : 0.9) * dt));
+        const pitchIn = clamp(this.controls.pitch, -1, 1);
+        const rollIn = clamp(this.controls.roll, -1, 1);
+        const yawIn = clamp(this.controls.yaw, -1, 1);
+        // G-load only builds during sustained hard manoeuvres at speed
+        this.gStress = clamp(this.gStress + (Math.abs(pitchIn) * 0.9 + Math.abs(rollIn) * 0.35 - 0.42) * dt * 1.4, 0, 1.6);
+        if (this.gStress > 0.95 && !this.glocRolled && this.pilot === 'player') {
+          this.glocRolled = true;
+          if (Math.random() < 0.5) {
+            this.pilotUnconscious = true;
+            this.game.hud?.message('ПЕРЕГРУЗКА! Пилот потерял сознание — вы падаете с самолётом', 3.2);
+          } else {
+            this.game.hud?.message('Кратковременная перегрузка — удержались в сознании', 1.6);
+          }
         }
+        this.pitchAngle += pitchIn * (0.9 + 0.35 * clamp(this.flightSpeed / 60, 0, 1)) * authority * tailAuth * dt;
+        this.pitchAngle = clamp(this.pitchAngle, -1.02, 1.02);
+        if (Math.abs(pitchIn) < 0.05) this.pitchAngle = damp(this.pitchAngle, 0.02, 1.1, dt);
+        // roll is clamped so the aircraft can never end up upside down
+        const bankTarget = rollIn * 0.98 * wingAuth;
+        this.rollAngle = damp(this.rollAngle, bankTarget, rollIn ? 3.2 : 1.8, dt);
+        const wingBias = ((this.wingBrokenL ? -0.5 : 0) + (this.wingBrokenR ? 0.5 : 0));
+        this.rollAngle += wingBias * dt;
+        this.rollAngle = clamp(this.rollAngle, -1.02, 1.02);
+        const bankTurn = -Math.sin(this.rollAngle) * (0.7 + 0.5 * clamp(this.flightSpeed / 55, 0, 1.15));
+        const rudderTurn = yawIn * 0.32 * tailAuth;
+        this.yaw += (bankTurn + rudderTurn) * dt;
         this.throttle = clamp(this.throttle, 0, 1);
-        const thrust = 15.5 * this.throttle * engineAuth;
-        this.vel.addScaledVector(this.forward, thrust * dt);
+      } else {
+        // dead stick / unconscious: nose falls and the aircraft rolls over
+        this.pitchAngle = clamp(this.pitchAngle - 0.28 * dt, -1.15, 0.4);
+        this.rollAngle += (this.wingBrokenL ? -0.5 : 0.45) * dt;
+        this.rollAngle = clamp(this.rollAngle, -1.15, 1.15);
+        this.throttle = Math.max(0, this.throttle - dt * 0.1);
       }
-      // stall
-      const stall = 24;
-      if (speed < stall) {
-        this.quat.multiply(_q2.setFromEuler(new THREE.Euler(0.7 * dt, 0, 0)));
-      }
+      // engine / speed
+      const engineTarget = 48 + this.throttle * 40 + (this.modules.engine / 100) * 6;
+      this.flightSpeed = damp(this.flightSpeed, engineTarget, 0.55, dt);
+      this.flightSpeed -= Math.sin(this.pitchAngle) * 8.5 * dt;
+      if (this.modules.engine <= 0) this.flightSpeed -= 5 * dt;
+      this.flightSpeed = clamp(this.flightSpeed, 22, 96);
+      // orientation is rebuilt from Euler angles every frame, guaranteeing the
+      // canopy always points up and turns are smooth and readable
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(-this.pitchAngle, this.yaw, this.rollAngle, 'YXZ'));
+      this.quat.copy(q).normalize();
       const fwd = this.forward;
-      const up = _v2.set(0, 1, 0).applyQuaternion(this.quat).clone();
-      // lift
-      const sf = clamp((speed / 40) ** 2, 0.06, 1.75);
-      let lift = 9.81 * sf * (0.35 + 0.65 * wingFactor);
-      if (this.takeoffBoost > 0) { lift *= 1.9; this.takeoffBoost -= dt; }
-      this.vel.addScaledVector(up, lift * dt);
-      this.vel.y -= 9.81 * dt;
-      // drag
-      const drag = 0.0040 * speed * speed + 0.12;
-      this.vel.addScaledVector(this.vel.clone().normalize(), -drag * dt);
-      // arcade velocity alignment
-      const targetVel = fwd.multiplyScalar(Math.max(speed, 1));
-      this.vel.lerp(targetVel, 1 - Math.exp(-2.4 * dt));
-      const maxSpeed = 92;
-      if (this.vel.length() > maxSpeed) this.vel.setLength(maxSpeed);
+      this.vel.copy(fwd).multiplyScalar(this.flightSpeed);
       this.pos.addScaledVector(this.vel, dt);
-      // wing trail / smoke
-      if (this.modules.wingL < 45 || this.modules.wingR < 45) {
+
+      // wing / engine damage trails
+      if (this.wingBrokenL || this.wingBrokenR || this.modules.wingL < 45 || this.modules.wingR < 45) {
         this.smokeT -= dt;
         if (this.smokeT <= 0) {
-          this.smokeT = 0.08;
-          const side = this.modules.wingL < this.modules.wingR ? -1 : 1;
-          const p = this.pos.clone().add(new THREE.Vector3(side * 3.5, 0, 0).applyQuaternion(this.quat));
-          this.game.effects.smoke(p, 1.0, [0.3, 0.3, 0.3], 1, 0.4, 3);
+          this.smokeT = 0.07;
+          const side = this.wingBrokenL ? -3.6 : this.wingBrokenR ? 3.6 : 0;
+          const p = this.pos.clone().add(new THREE.Vector3(side, 0, 0).applyQuaternion(this.quat));
+          this.game.effects.smoke(p, 1.1, [0.3, 0.3, 0.3], 1, 0.4, 3);
         }
       }
       if (this.modules.engine < 45) {
@@ -951,32 +1113,40 @@ export class Plane {
           if (this.modules.engine < 20) this.game.effects.fire(p);
         }
       }
-      // ground collision
+
+      // ground contact / landing / crash
       const gy = heightAt(this.pos.x, this.pos.z);
       if (this.pos.y < gy + 0.55) {
-        const impact = Math.abs(this.vel.y);
-        if (this.speed > 30 || impact > 6) {
-          this.pos.y = gy + 0.4;
+        const hard = this.vel.y < -8 || Math.abs(this.rollAngle) > 0.48 || this.pitchAngle < -0.22 || this.flightSpeed > 58;
+        if (hard) {
+          this.pos.y = Math.max(gy + 0.35, this.pos.y);
           this.destroy('crash');
           return;
         }
-        // touch down
         this.onGround = true;
         this.pos.y = gy + 0.06;
         this.vel.y = 0;
-        this.throttle *= 0.4;
-        this.game.effects.dust(this.pos.clone(), 6);
+        this.throttle *= 0.35;
+        this.pitchAngle = 0;
+        this.rollAngle = 0;
         this.yaw = Math.atan2(fwd.x, fwd.z);
-        this.game.hud?.message('Посадка', 1.2);
+        this.quat.setFromEuler(new THREE.Euler(0, this.yaw, 0));
+        this.game.effects.dust(this.pos.clone(), 6);
+        this.game.hud?.message('Посадка', 1.1);
       }
       this.group.position.copy(this.pos);
       this.group.quaternion.copy(this.quat);
     }
 
-    // control surfaces & prop
+    // control surfaces & propeller
     if (this.prop) this.prop.rotation.z += (2 + this.throttle * 46) * dt;
-    if (this.rudder) this.rudder.rotation.y = -this.controls.yaw * 0.4;
-    if (this.elevator) this.elevator.rotation.x = -this.controls.pitch * 0.35;
+    if (this.rudder) this.rudder.rotation.y = -this.controls.yaw * 0.45;
+    for (const e of this.elevators || []) e.rotation.x = -this.controls.pitch * 0.38;
+    for (const sideKey of ['wingL', 'wingR']) {
+      const wg = this.group.userData[sideKey];
+      const ails = wg?.userData?.ailerons || [];
+      for (const a of ails) if (a) a.rotation.x = this.controls.roll * (sideKey === 'wingL' ? 0.4 : -0.4);
+    }
 
     // guns
     if (this.pilot === 'player') {
@@ -990,7 +1160,7 @@ export class Plane {
 
   fireGuns(target) {
     this.ammo--;
-    const from = this.pos.clone().add(new THREE.Vector3(0, 0.1, 2.8).applyQuaternion(this.quat));
+    const from = this.pos.clone().add(new THREE.Vector3(0, 1.5, 2.6).applyQuaternion(this.quat));
     const to = target.clone();
     const dist = from.distanceTo(to);
     to.x += (Math.random() - 0.5) * dist * 0.02;
@@ -1000,7 +1170,7 @@ export class Plane {
     this.game.effects.muzzle(from, _v2.copy(to).sub(from).normalize(), 0.9);
     this.game.audio?.mg(this.team, from, 0.5);
     const hit = this.game.raycastTargets(from, _v2.copy(to).sub(from).normalize(), 400, this.team);
-    if (hit?.entity) hit.entity.hit?.(7 + Math.random() * 5, from, _v2.copy(to).sub(from).normalize());
+    if (hit?.entity) hit.entity.hit?.(7 + Math.random() * 5, from, _v2.copy(to).sub(from).normalize(), hit.module);
   }
 
   dispose() {
