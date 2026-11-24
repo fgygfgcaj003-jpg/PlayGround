@@ -669,13 +669,16 @@ export class Game {
     p.toolSwing = 1;
     this.audio?.noiseBurst?.(0.09, 170, 0.7, 0.1, -0.3);
     const dir = this.camera.getWorldDirection(new THREE.Vector3());
-    const at = p.pos.clone().add(new THREE.Vector3(dir.x, 0, dir.z).normalize().multiplyScalar(2.5));
+    const flat = new THREE.Vector3(dir.x, 0, dir.z).normalize();
+    const at = p.pos.clone().addScaledVector(flat, 2.8);
     at.x = clamp(at.x, WORLD.minX + 6, WORLD.maxX - 6);
     at.z = clamp(at.z, WORLD.minZ + 6, WORLD.maxZ - 6);
-    digTrench(this.world, at.x, at.z, 2.65, 1.55);
+    // Dig a forward segment; walking while swinging joins segments into a
+    // long traversing trench instead of a chain of round holes.
+    digTrench(this.world, at.x, at.z, Math.atan2(flat.x, flat.z), 4.6, 2.35, 1.55);
     this.effects.dust(new THREE.Vector3(at.x, heightAt(at.x, at.z) + 1, at.z), 14);
     this.effects.impactDirt(new THREE.Vector3(at.x, heightAt(at.x, at.z) + 0.4, at.z), 1.4);
-    this.hud.message('Окоп углублён. Держитесь ниже бруствера!', 2);
+    this.hud.message('Окоп удлинён. Двигайтесь и копайте дальше!', 2);
   }
 
   useHammer() {
@@ -745,9 +748,12 @@ export class Game {
         return true;
       }
     }
-    // otherwise improve the position with a scrape
+    // otherwise improve the position with a long traverse along the front
     if (side < 0 ? s.z > -230 : s.z < 230) {
-      digTrench(this.world, s.x, s.z, 2.4, 1.15);
+      const yaw = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+      const px = clamp(s.x + Math.sin(yaw) * 2.2, WORLD.minX + 20, WORLD.maxX - 20);
+      const pz = clamp(s.z + Math.cos(yaw) * 2.2, WORLD.minZ + 20, WORLD.maxZ - 20);
+      digTrench(this.world, px, pz, yaw, 5.2, 2.2, 1.4);
       s.toolSwing = 1;
       return true;
     }
@@ -1051,6 +1057,7 @@ export class Game {
     p.deathReason = reason;
     this.stats.deaths++;
     this.hud.setDeath(true, reason);
+    this.hud.setBlackout?.(false);
     if (p.mode === 'mg' && p.mg) p.mg.dismount();
     if (p.mode === 'plane' && p.plane) { p.plane.pilot = null; this.audio.stopEngine(); }
     if (p.mode === 'tank' && p.tank) p.tank.playerAboard = false;
@@ -1189,6 +1196,10 @@ export class Game {
   bailPlane() {
     const p = this.player, pl = p.plane;
     if (!pl || p.mode !== 'plane') return;
+    if (!pl.conscious || pl.gloc > 0) {
+      this.hud.message('Вы без сознания — не можете покинуть самолёт!', 2.4);
+      return;
+    }
     if (pl.onGround || pl.altitude < 8) { this.exitPlane(); return; }
     const chute = this.spawnParachute(pl.pos.clone(), 'british', true);
     p.chute = chute;
@@ -1196,8 +1207,41 @@ export class Game {
     p.pos.copy(pl.pos);
     pl.pilot = null;
     p.plane = null;
+    this.hud.setBlackout?.(false);
     this.audio.stopEngine();
     this.hud.message('Парашют раскрыт!', 3);
+  }
+
+  /* Called by Plane.destroy() when the pilot is still conscious but the
+   * aircraft is going down. */
+  playerAutoBail(pl) {
+    const p = this.player;
+    if (p.mode !== 'plane' || p.plane !== pl) return;
+    if (pl.onGround || pl.altitude < 8) { this.exitPlane(); return; }
+    const chute = this.spawnParachute(pl.pos.clone(), 'british', true);
+    p.chute = chute;
+    p.mode = 'parachute';
+    p.pos.copy(pl.pos);
+    pl.pilot = null;
+    p.plane = null;
+    this.hud.setBlackout?.(false);
+    this.audio.stopEngine();
+    this.hud.message('Прыжок с парашютом!', 3);
+  }
+
+  /* 50/50 crash survival for a pilot who could not get out. */
+  playerPlaneSurvive(pl) {
+    const p = this.player;
+    if (p.mode !== 'plane' || p.plane !== pl) return;
+    p.mode = 'foot';
+    p.plane = null;
+    p.pos.set(pl.pos.x, heightAt(pl.pos.x, pl.pos.z), pl.pos.z);
+    p.hp = Math.max(8, Math.min(p.hp, 32));
+    p.jumpY = 0; p.vy = 0; p.grounded = true;
+    p.spawnGuard = 2;
+    this.hud.setBlackout?.(false);
+    this.audio.stopEngine();
+    this.hud.message('Вы выжили в катастрофе. Найдите укрытие!', 3.5);
   }
 
   spawnParachute(pos, team, isPlayer) {

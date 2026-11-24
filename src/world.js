@@ -7,7 +7,7 @@ import {
 import {
   toonMat, PALETTE, addBox, addCyl, addSphere, addCone, addTorus, buildNissenHut, buildTent, buildHangar,
   buildWindsock, buildFlag, buildBunker, buildTruck, buildCrateStack, buildFieldGun,
-  buildMarkI, buildPlane, buildParachute,
+  buildMarkI, buildPlane, buildParachute, buildMGBunker,
 } from './models.js';
 
 export const WORLD = {
@@ -85,10 +85,8 @@ function baseHeight(x, z) {
 }
 
 function channelCarve(x, z) {
-  // Deliberately no pre-built trenches.  The old terrain-carved network was
-  // removed completely; the only trenches in the game are the ones engineers
-  // dig at runtime (see digTrenchLine below), which stay perfectly in sync
-  // with the collision height field.
+  // The old baked trench network is gone.  The ground is now open battlefield;
+  // engineers carve real, persistent trenches with their shovels instead.
   return { depth: 0, parapet: 0 };
 }
 
@@ -111,11 +109,7 @@ function rawHeight(x, z) {
  *  and interpolate with the same triangle split PlaneGeometry uses, so
  *  collision and visuals can never disagree.
  * ------------------------------------------------------------------ */
-// 2 m per cell.  The old 3.4 x 3.2 m grid was wider than a trench, which is
-// exactly why diggers could not see their work and soldiers fell through the
-// rendered surface.  The visible mesh and the collision field are generated
-// from this single grid, so they can never disagree.
-const TERRAIN_NX = 640, TERRAIN_NZ = 320;
+const TERRAIN_NX = 380, TERRAIN_NZ = 200;
 const TERRAIN_GRID = new Float32Array((TERRAIN_NX + 1) * (TERRAIN_NZ + 1));
 let terrainGridReady = false;
 
@@ -133,119 +127,154 @@ function buildTerrainGrid() {
 }
 buildTerrainGrid();
 
+/* Engineer-dug trenches are analytic: the coarse terrain grid stays intact,
+ * but heightAt() subtracts the local trench profile and the visible terrain
+ * vertices are refreshed around the cut.  This keeps collision exact while
+ * letting a shovel carve a long, clean trench regardless of grid resolution. */
+const DUG_TRENCHES = [];
+
+export function dugTrenchDepthAt(x, z) {
+  let depth = 0;
+  for (let i = 0; i < DUG_TRENCHES.length; i++) {
+    const t = DUG_TRENCHES[i];
+    const abx = t.bx - t.ax, abz = t.bz - t.az;
+    const apx = x - t.ax, apz = z - t.az;
+    const len2 = abx * abx + abz * abz;
+    const u = len2 > 0 ? clamp((apx * abx + apz * abz) / len2, 0, 1) : 0;
+    const dx = x - (t.ax + abx * u), dz = z - (t.az + abz * u);
+    const d = Math.hypot(dx, dz);
+    const half = t.width * 0.5;
+    if (d < half + 1.0) {
+      const f = d <= half - 0.2 ? 1 : 1 - clamp((d - (half - 0.2)) / 1.2, 0, 1);
+      const smooth = f * f * (3 - 2 * f);
+      depth = Math.max(depth, t.depth * smooth);
+    }
+  }
+  return depth;
+}
+
 export function heightAt(x, z) {
-  if (!terrainGridReady) return rawHeight(x, z);
-  const nx = TERRAIN_NX, nz = TERRAIN_NZ;
-  const fx = clamp((x - WORLD.minX) / WORLD.width, 0, 0.999999) * nx;
-  const fz = clamp((z - WORLD.minZ) / WORLD.depth, 0, 0.999999) * nz;
-  const ix = Math.floor(fx), iz = Math.floor(fz);
-  const u = fx - ix, v = fz - iz;
-  const i00 = iz * (nx + 1) + ix;
-  const h00 = TERRAIN_GRID[i00];
-  const h10 = TERRAIN_GRID[i00 + 1];
-  const h01 = TERRAIN_GRID[i00 + nx + 1];
-  const h11 = TERRAIN_GRID[i00 + nx + 2];
-  // match PlaneGeometry triangulation: (a,b,d) then (b,c,d)
-  if (u + v <= 1) return h00 + u * (h10 - h00) + v * (h01 - h00);
-  return h11 + (1 - u) * (h01 - h11) + (1 - v) * (h10 - h11);
+  let h;
+  if (!terrainGridReady) {
+    h = rawHeight(x, z);
+  } else {
+    const nx = TERRAIN_NX, nz = TERRAIN_NZ;
+    const fx = clamp((x - WORLD.minX) / WORLD.width, 0, 0.999999) * nx;
+    const fz = clamp((z - WORLD.minZ) / WORLD.depth, 0, 0.999999) * nz;
+    const ix = Math.floor(fx), iz = Math.floor(fz);
+    const u = fx - ix, v = fz - iz;
+    const i00 = iz * (nx + 1) + ix;
+    const h00 = TERRAIN_GRID[i00];
+    const h10 = TERRAIN_GRID[i00 + 1];
+    const h01 = TERRAIN_GRID[i00 + nx + 1];
+    const h11 = TERRAIN_GRID[i00 + nx + 2];
+    // match PlaneGeometry triangulation: (a,b,d) then (b,c,d)
+    if (u + v <= 1) h = h00 + u * (h10 - h00) + v * (h01 - h00);
+    else h = h11 + (1 - u) * (h01 - h11) + (1 - v) * (h10 - h11);
+  }
+  return h - dugTrenchDepthAt(x, z);
 }
 
-/* Engineer shovel: deform the baked field *and* the visible mesh together.
-   A segment lets teams dig proper long traverses instead of round pits. */
-function distToSegment(px, pz, x1, z1, x2, z2) {
-  const vx = x2 - x1, vz = z2 - z1;
-  const wx = px - x1, wz = pz - z1;
-  const len2 = vx * vx + vz * vz;
-  const t = len2 > 0 ? clamp((wx * vx + wz * vz) / len2, 0, 1) : 0;
-  return Math.hypot(px - (x1 + vx * t), pz - (z1 + vz * t));
-}
-
-export function digTrenchLine(world, x1, z1, x2, z2, width = 2.6, depth = 1.45, withLip = true) {
-  if (!world) return null;
-  const geo = world.terrainGeo;
+/* Engineer shovel: carve a long, oriented trench segment.  Call it repeatedly
+ * while walking forward and the segments join into a continuous trench. */
+export function digTrench(world, cx, cz, yaw = 0, length = 4.6, width = 2.35, depth = 1.55) {
+  const dx = Math.sin(yaw), dz = Math.cos(yaw);
+  const ax = cx - dx * length * 0.5, az = cz - dz * length * 0.5;
+  const bx = cx + dx * length * 0.5, bz = cz + dz * length * 0.5;
+  const seg = { ax, az, bx, bz, width, depth, yaw };
+  // Capture the original surface height before this cut so the visual walls
+  // reach the old ground line.
+  const topY = heightAt(cx, cz) + depth;
+  DUG_TRENCHES.push(seg);
+  if (DUG_TRENCHES.length > 90) DUG_TRENCHES.shift();
+  const geo = world?.terrainGeo;
   const pos = geo?.attributes.position;
   const colors = geo?.attributes.color;
   const nx = TERRAIN_NX, nz = TERRAIN_NZ;
   const sx = WORLD.width / nx, sz = WORLD.depth / nz;
-  const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
-  const reach = width + 2.4;
-  const ix0 = Math.max(0, Math.floor((Math.min(x1, x2) - reach - WORLD.minX) / sx));
-  const ix1 = Math.min(nx, Math.ceil((Math.max(x1, x2) + reach - WORLD.minX) / sx));
-  const iz0 = Math.max(0, Math.floor((Math.min(z1, z2) - reach - WORLD.minZ) / sz));
-  const iz1 = Math.min(nz, Math.ceil((Math.max(z1, z2) + reach - WORLD.minZ) / sz));
-  const mud = new THREE.Color(0x433a29);
-  const mudLight = new THREE.Color(0x6a5a3d);
-  const topY = heightAt(cx, cz);
-  let changed = false;
+  const reach = Math.max(width * 0.5, length * 0.5) + 2.2;
+  const ix0 = Math.max(0, Math.floor((cx - reach - WORLD.minX) / sx));
+  const ix1 = Math.min(nx, Math.ceil((cx + reach - WORLD.minX) / sx));
+  const iz0 = Math.max(0, Math.floor((cz - reach - WORLD.minZ) / sz));
+  const iz1 = Math.min(nz, Math.ceil((cz + reach - WORLD.minZ) / sz));
+  const mud = new THREE.Color(0x4a3f2c);
+  const mudDark = new THREE.Color(0x33291c);
   for (let iz = iz0; iz <= iz1; iz++) {
     const z = WORLD.minZ + iz * sz;
     for (let ix = ix0; ix <= ix1; ix++) {
       const x = WORLD.minX + ix * sx;
-      const d = distToSegment(x, z, x1, z1, x2, z2);
-      if (d > width + 1.9) continue;
       const idx = iz * (nx + 1) + ix;
-      if (d <= width) {
-        const f = 1 - (d / width) ** 2;
-        const drop = depth * f * (0.92 + 0.08 * noise2(x * 0.6, z * 0.6));
-        TERRAIN_GRID[idx] -= drop;
-        if (pos) pos.setY(idx, pos.getY(idx) - drop);
+      const cut = dugTrenchDepthAt(x, z);
+      if (cut > 0.001) {
+        if (pos) pos.setY(idx, TERRAIN_GRID[idx] - cut);
         if (colors) {
-          const c = f > 0.55 ? mud : mudLight;
-          colors.setXYZ(idx, c.r, c.g, c.b);
-        }
-      } else if (withLip) {
-        // Spoil thrown up on both lips.  It is part of the same height field,
-        // so the parapet is solid ground instead of decoration.
-        const t = (d - width) / 1.9;
-        const lift = 0.5 * Math.exp(-((t - 0.42) / 0.34) ** 2);
-        TERRAIN_GRID[idx] += lift;
-        if (pos) pos.setY(idx, pos.getY(idx) + lift);
-        if (colors && t < 0.55) {
-          colors.setXYZ(idx, mudLight.r, mudLight.g, mudLight.b);
+          const mix = clamp(cut / Math.max(0.2, depth), 0, 1);
+          colors.setXYZ(idx,
+            mudDark.r + (mud.r - mudDark.r) * (1 - mix),
+            mudDark.g + (mud.g - mudDark.g) * (1 - mix),
+            mudDark.b + (mud.b - mudDark.b) * (1 - mix));
         }
       }
-      changed = true;
     }
   }
-  if (pos && changed) {
+  if (pos) {
     pos.needsUpdate = true;
     geo.computeVertexNormals();
-    geo.attributes.normal.needsUpdate = true;
+    if (geo.attributes.normal) geo.attributes.normal.needsUpdate = true;
     if (colors) colors.needsUpdate = true;
   }
-  const len = Math.hypot(x2 - x1, z2 - z1);
+
   const floorY = heightAt(cx, cz);
-  if (withLip && world.addTrenchBag) {
-    const rng = mulberry32(Math.floor((cx * 71 + cz * 37) * 13) >>> 0);
-    const dx = x2 - x1, dz = z2 - z1;
-    const l = Math.hypot(dx, dz) || 1;
-    const nx2 = -dz / l, nz2 = dx / l;
-    const steps = Math.min(64, Math.max(8, Math.round(len / 0.85)));
-    for (const side of [-1, 1]) {
-      for (let i = 0; i <= steps; i++) {
-        const t = i / steps;
-        const px = x1 + dx * t + nx2 * side * (width + 0.55);
-        const pz = z1 + dz * t + nz2 * side * (width + 0.55);
-        const py = heightAt(px, pz);
-        world.addTrenchBag(px, py + 0.12 + rng() * 0.08, pz, rng());
-      }
+  const trench = new THREE.Group();
+  trench.position.set(cx, 0, cz);
+  trench.rotation.y = yaw;
+  const mudMat = new THREE.MeshLambertMaterial({ color: 0x3b3020 });
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0x4a3b28 });
+  // floor strip
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(width * 0.92, length), mudMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(0, floorY + 0.035, 0);
+  floor.receiveShadow = true;
+  trench.add(floor);
+  // sloped earth walls / revetment
+  for (const side of [-1, 1]) {
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(0.16, depth + 0.15, length), wallMat);
+    wall.position.set(side * (width * 0.5 - 0.06), topY - depth * 0.5, 0);
+    wall.rotation.z = side * 0.12;
+    wall.castShadow = true; wall.receiveShadow = true;
+    trench.add(wall);
+    for (let i = -2; i <= 2; i++) {
+      const plank = addBox(trench, 0.06, depth * 0.72, length * 0.16, PALETTE.woodDark,
+        side * (width * 0.5 + 0.02), topY - depth * 0.45, i * length * 0.19);
+      plank.rotation.z = side * 0.12;
     }
   }
-  if (!world.dugTrenches) world.dugTrenches = [];
-  world.dugTrenches.push({ x1, z1, x2, z2, width, depth });
-  if (world.dugTrenches.length > 90) world.dugTrenches.shift();
-  return { x: cx, z: cz, y: floorY, topY, x1, z1, x2, z2 };
-}
-
-export function digTrench(world, cx, cz, radius = 2.6, depth = 1.45) {
-  return digTrenchLine(world, cx, cz, cx + 0.01, cz, radius, depth, true);
+  // end caps keep the open ends from looking like a floating cut
+  for (const s of [-1, 1]) {
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(width, depth * 0.85, 0.16), wallMat);
+    cap.position.set(0, topY - depth * 0.42, s * length * 0.5);
+    cap.receiveShadow = true;
+    trench.add(cap);
+  }
+  // fresh sandbag lip along both edges
+  const rng = mulberry32(Math.floor(cx * 71 + cz * 37 + length * 13) >>> 0);
+  const bags = Math.max(4, Math.round(length * 1.8));
+  for (const side of [-1, 1]) {
+    for (let i = 0; i < bags; i++) {
+      const t = (i + 0.5) / bags - 0.5;
+      addSphere(trench, 0.2 + rng() * 0.07,
+        rng() < 0.5 ? PALETTE.sandbag : PALETTE.sandbagDark,
+        side * (width * 0.5 + 0.18 + rng() * 0.12), topY + 0.02 + rng() * 0.1, t * length,
+        1.45, 0.7, 0.85);
+    }
+  }
+  world.group.add(trench);
+  if (!world.engineeredTrenches) world.engineeredTrenches = DUG_TRENCHES;
+  return { x: cx, z: cz, y: floorY, topY, yaw, length, width, depth, group: trench };
 }
 
 export function trenchDepthAt(x, z) {
-  if (!terrainGridReady) return 0;
-  // Difference between the untouched analytic ground and the baked (and dug)
-  // height field.  This follows the exact same interpolation as collision.
-  return Math.max(0, rawHeight(x, z) - heightAt(x, z));
+  return dugTrenchDepthAt(x, z);
 }
 export function inTrench(x, z, pad = 0) {
   return trenchDepthAt(x, z) > 0.4 + pad;
@@ -277,6 +306,8 @@ export class World {
     this.setupSky();
     this.setupLights();
     this.buildTerrain();
+    // The baked trench network is gone.  The battlefield is open ground;
+    // engineer shovels carve real, persistent trenches (see digTrench()).
     this.buildBarbedWire();
     this.buildCraters();
     this.buildVegetation();
@@ -441,6 +472,136 @@ export class World {
     this.group.add(terrain);
     this.terrain = terrain;
     this.terrainGeo = geo;
+  }
+
+  /* ---------------- trenches ---------------- */
+  buildTrenches() {
+    const rng = mulberry32(4242);
+    // low-poly lumpy bag: cheap enough for ~14k instances
+    const sandbagGeo = new THREE.SphereGeometry(0.2, 6, 4);
+    const sandMat = toonMat(0xb09a6b);
+    const sandMat2 = toonMat(0x8f7a52);
+    const bagCount = 11000;
+    const bags = new THREE.InstancedMesh(sandbagGeo, sandMat, bagCount);
+    bags.castShadow = true; bags.receiveShadow = true;
+    const bags2 = new THREE.InstancedMesh(sandbagGeo, sandMat2, bagCount);
+    bags2.castShadow = true; bags2.receiveShadow = true;
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const v = new THREE.Vector3();
+    const sc = new THREE.Vector3();
+    let i1 = 0, i2 = 0;
+
+    const plankGeo = new THREE.BoxGeometry(2.1, 0.055, 0.34);
+    const duckMat = toonMat(PALETTE.wood);
+    const ducks = new THREE.InstancedMesh(plankGeo, duckMat, 5600);
+    ducks.receiveShadow = true;
+    let di = 0;
+
+    const revetGeo = new THREE.BoxGeometry(1.0, 1.55, 0.075);
+    const revets = new THREE.InstancedMesh(revetGeo, toonMat(PALETTE.woodDark), 5600);
+    revets.castShadow = true; revets.receiveShadow = true;
+    let ri = 0;
+
+    const postGeo = new THREE.BoxGeometry(0.09, 1.25, 0.09);
+    const posts = new THREE.InstancedMesh(postGeo, toonMat(PALETTE.woodDark), 2200);
+    posts.castShadow = true;
+    let pi = 0;
+
+    for (const side of [-1, 1]) {
+      for (let x = -610; x <= 610; x += 0.66) {
+        const cz = trenchZ(x, side);
+        const w = trenchWidth(x);
+        const floor = heightAt(x, cz);
+        const top = floor + 2.45;
+        // sandbag parapet on both lips
+        for (const s of [-1, 1]) {
+          for (let row = 0; row < 2; row++) {
+            if (rng() < 0.06) continue;
+            const bz = cz + s * (w + 0.22 + row * 0.26) + (rng() - 0.5) * 0.1;
+            const by = heightAt(x, bz) + 0.06 + row * 0.23;
+            q.setFromEuler(new THREE.Euler((rng() - 0.5) * 0.25, (rng() - 0.5) * 0.18, (rng() - 0.5) * 0.1));
+            v.set(x + (rng() - 0.5) * 0.12, by, bz);
+            sc.set(1.25 + rng() * 0.2, 0.72 + rng() * 0.14, 1.0);
+            m4.compose(v, q, sc);
+            if (rng() < 0.5) { if (i1 < bagCount) bags.setMatrixAt(i1++, m4); }
+            else if (i2 < bagCount) bags2.setMatrixAt(i2++, m4);
+          }
+        }
+        // duckboards
+        if (di < 5600 && Math.abs(x) < 560) {
+          q.setFromEuler(new THREE.Euler(0, (rng() - 0.5) * 0.05, 0));
+          v.set(x, floor + 0.045, cz + (rng() - 0.5) * 0.08);
+          sc.set(0.5 + rng() * 0.06, 1, 1);
+          m4.compose(v, q, sc);
+          ducks.setMatrixAt(di++, m4);
+        }
+        // revetment planks on both trench walls
+        if (ri < 5600) {
+          const s = rng() < 0.5 ? 1 : -1;
+          q.setFromEuler(new THREE.Euler(0, (rng() - 0.5) * 0.1, (rng() - 0.5) * 0.05));
+          v.set(x, floor + 0.82 + (rng() - 0.5) * 0.08, cz + s * (w - 0.05));
+          sc.set(0.8, 0.92 + rng() * 0.16, 1);
+          m4.compose(v, q, sc);
+          revets.setMatrixAt(ri++, m4);
+        }
+        // occasional upright posts on the lip
+        if (pi < 2200 && rng() < 0.18) {
+          q.setFromEuler(new THREE.Euler((rng() - 0.5) * 0.2, 0, (rng() - 0.5) * 0.2));
+          v.set(x, top + 0.55, cz + (rng() < 0.5 ? 1 : -1) * (w + 0.7));
+          sc.set(1, 0.9 + rng() * 0.3, 1);
+          m4.compose(v, q, sc);
+          posts.setMatrixAt(pi++, m4);
+        }
+      }
+    }
+    bags.count = i1; bags2.count = i2; ducks.count = di; revets.count = ri; posts.count = pi;
+    this.group.add(bags, bags2, ducks, revets, posts);
+    this.sandbags = [bags, bags2];
+    this.trenchDetails = [ducks, revets, posts];
+
+    // ladders & dugout entrances along the trench
+    const ladders = new THREE.Group();
+    for (const side of [-1, 1]) {
+      for (let x = -560; x <= 560; x += 76) {
+        const cz = trenchZ(x, side), w = trenchWidth(x), floor = heightAt(x, cz);
+        const lad = new THREE.Group();
+        for (const s of [-1, 1]) addBox(lad, 0.06, 2.5, 0.06, PALETTE.woodDark, s * 0.3, 1.25, 0);
+        for (let r = 0; r < 7; r++) addBox(lad, 0.66, 0.05, 0.05, PALETTE.wood, 0, 0.25 + r * 0.34, 0);
+        lad.position.set(x, floor, cz + w - 0.2);
+        ladders.add(lad);
+      }
+    }
+    this.group.add(ladders);
+
+    // dugouts: dark openings framed with timber on the rear wall
+    for (const side of [-1, 1]) {
+      for (let x = -520; x <= 520; x += 105) {
+        const cz = trenchZ(x, side), w = trenchWidth(x), floor = heightAt(x, cz);
+        const g = new THREE.Group();
+        addBox(g, 2.2, 2.1, 0.1, 0x14120e, 0, 1.1, 0);
+        addBox(g, 2.5, 0.16, 0.2, PALETTE.woodDark, 0, 2.2, 0.05);
+        addBox(g, 0.16, 2.2, 0.2, PALETTE.woodDark, -1.1, 1.1, 0.05);
+        addBox(g, 0.16, 2.2, 0.2, PALETTE.woodDark, 1.1, 1.1, 0.05);
+        // steps
+        for (let s = 0; s < 3; s++) addBox(g, 0.8, 0.12, 0.4, PALETTE.wood, 0, 0.1 + s * 0.18, 0.2 + s * 0.2);
+        g.position.set(x, floor, cz + side * (w - 0.12));
+        g.rotation.y = side > 0 ? 0 : Math.PI;
+        this.group.add(g);
+      }
+    }
+
+    // trench bridges / fascines at tank crossing
+    for (const side of [-1, 1]) {
+      const cz = trenchZ(-20, side);
+      const g = new THREE.Group();
+      for (let i = 0; i < 10; i++) {
+        addCyl(g, 0.16, 0.16, 5.6, 6, PALETTE.wood, 0, 0.16 + (i % 2) * 0.3, -2.6 + i * 0.58, 0, 0, Math.PI / 2);
+      }
+      addBox(g, 6.2, 0.15, 6.2, PALETTE.woodDark, 0, 0.6, 0);
+      g.position.set(-20, heightAt(-20, cz) + 0.1, cz);
+      this.group.add(g);
+    }
   }
 
   /* ---------------- barbed wire ---------------- */
@@ -656,36 +817,6 @@ export class World {
 
   addCollider(x, z, r) { this.colliders.push({ x, z, r }); }
 
-  /* One instanced pool for every sandbag thrown up by engineer trenches. */
-  addTrenchBag(x, y, z, seed = Math.random()) {
-    if (!this.trenchBagPool) {
-      const geo = new THREE.SphereGeometry(0.2, 6, 4);
-      const mat = toonMat(PALETTE.sandbag);
-      const pool = new THREE.InstancedMesh(geo, mat, 9000);
-      pool.castShadow = true; pool.receiveShadow = true;
-      pool.frustumCulled = false;
-      pool.count = 0;
-      pool.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      this.group.add(pool);
-      this.trenchBagPool = pool;
-      this._bagDummy = new THREE.Object3D();
-      this._bagColor = new THREE.Color();
-    }
-    const pool = this.trenchBagPool;
-    if (pool.count >= 9000) return;
-    const d = this._bagDummy;
-    d.position.set(x, y, z);
-    d.rotation.set((seed - 0.5) * 0.25, seed * TAU, (seed - 0.5) * 0.12);
-    d.scale.set(1.3 + seed * 0.18, 0.68 + seed * 0.12, 0.9 + seed * 0.1);
-    d.updateMatrix();
-    pool.setMatrixAt(pool.count, d.matrix);
-    this._bagColor.setHex(seed < 0.5 ? PALETTE.sandbag : PALETTE.sandbagDark);
-    pool.setColorAt(pool.count, this._bagColor);
-    pool.count++;
-    pool.instanceMatrix.needsUpdate = true;
-    if (pool.instanceColor) pool.instanceColor.needsUpdate = true;
-  }
-
   addCampfire(x, z, big = false) {
     const g = new THREE.Group();
     const y = heightAt(x, z);
@@ -889,17 +1020,16 @@ export class World {
 
   addMGNest(x, z, team) {
     const y = heightAt(x, z);
-    const nest = new THREE.Group();
-    const rng = mulberry32(Math.floor(x * 13 + z * 7 + 99) >>> 0);
-    for (let i = 0; i < 18; i++) {
-      const a = (i / 18) * TAU;
-      addSphere(nest, 0.27 + rng() * 0.05, i % 2 ? PALETTE.sandbag : PALETTE.sandbagDark,
-        Math.cos(a) * (1.15 + rng() * 0.12), 0.12 + (i % 3) * 0.17, Math.sin(a) * (1.15 + rng() * 0.12),
-        1.45, 0.72, 0.85);
-    }
-    nest.position.set(x, y, z);
-    this.group.add(nest);
-    return { x, z, y, team, side: team === 'british' ? -1 : 1 };
+    const yaw = team === 'british' ? 0 : Math.PI;
+    const bunker = buildMGBunker(team);
+    bunker.position.set(x, y, z);
+    bunker.rotation.y = yaw;
+    this.group.add(bunker);
+    // A shallow scrape in front of the bunker reads as a prepared position.
+    const front = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+    const sx = x + front.x * 2.4, sz = z + front.z * 2.4;
+    addSphere(this.group, 0.28, PALETTE.sandbagDark, sx, heightAt(sx, sz) + 0.16, sz, 2.0, 0.5, 1.2);
+    return { x, z, y, team, side: team === 'british' ? -1 : 1, yaw, bunker };
   }
 
   /* ---------------- distant scenery ---------------- */
