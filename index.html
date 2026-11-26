@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#07131c" />
+  <title>SKYWARD — Flight Incident Sandbox</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <main id="game"><canvas id="scene"></canvas>
+    <div class="vignette"></div>
+    <header class="topbar">
+      <a class="brand" href="#"><span class="brand-mark">S</span><span>SKYWARD<small>FLIGHT INCIDENT SANDBOX</small></span></a>
+      <div class="world-pill"><i></i><span>COASTAL TEST RANGE</span><b>LIVE</b></div>
+      <div class="top-actions"><button class="icon-btn" id="weatherBtn" title="Weather">☼</button><button class="icon-btn" id="soundBtn" title="Sound">◖</button><button class="icon-btn" id="helpBtn" title="Controls">?</button></div>
+    </header>
+    <section class="left-rail">
+      <div class="section-label">SIMULATION <span>01</span></div>
+      <div class="sim-card"><div class="live-dot"></div><div><strong>Free camera</strong><small>Sandbox mode</small></div><button class="dots">···</button></div>
+      <div class="section-label aircraft-label">ACTIVE AIRCRAFT <span id="aircraftCount">00</span></div>
+      <div id="aircraftList" class="aircraft-list"><div class="empty-state">No aircraft in range.<br><span>Spawn one to begin.</span></div></div>
+      <button class="spawn-button" id="spawnBtn"><span>＋</span> SPAWN AIRCRAFT <kbd>F</kbd></button>
+      <div class="left-foot"><div class="foot-icon">⌖</div><div><small>WORLD POSITION</small><span id="coords">37.7749° N / 122.4194° W</span></div></div>
+    </section>
+    <section class="right-rail" id="inspector">
+      <div class="section-label inspector-title">OBJECT INSPECTOR <span class="target-icon">⌖</span></div>
+      <div id="inspectContent" class="inspect-empty"><div class="reticle">⌖</div><strong>Select an aircraft</strong><span>Click any aircraft in the world<br>to inspect its systems.</span></div>
+    </section>
+    <div class="scene-label"><span class="scene-label-line"></span><div><small>SCENARIO</small><strong>COASTAL APPROACH</strong></div><span class="scene-tag">FREE ROAM</span></div>
+    <div class="telemetry"><div><span>ALT</span><b id="altReadout">000</b><small>FT</small></div><i></i><div><span>SPD</span><b id="spdReadout">000</b><small>KT</small></div><i></i><div><span>WIND</span><b id="windReadout">08</b><small>KT</small></div></div>
+    <div class="bottom-hint"><span class="mouse-symbol">⌖</span> DRAG TO ORBIT <kbd>W A S D</kbd> MOVE <kbd>SCROLL</kbd> ZOOM</div>
+    <div class="toast" id="toast"></div>
+    <div class="modal-backdrop" id="modalBackdrop">
+      <section class="spawn-modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <div class="modal-head"><div><div class="eyebrow">FLIGHT OPERATIONS / NEW ENTITY</div><h1 id="modalTitle">Spawn aircraft<span>.</span></h1></div><button class="close-btn" id="closeModal">×</button></div>
+        <div class="modal-body"><div class="fleet-column"><div class="field-title">SELECT AIRFRAME <span>04 AVAILABLE</span></div><div class="fleet-grid" id="fleetGrid"></div><p class="fleet-note">Airframes are modeled with distinct proportions and flight characteristics.</p></div>
+          <div class="config-column"><div class="field-title">INITIAL CONDITIONS <span>CONFIGURE</span></div>
+            <label class="range-row"><span>Altitude <b id="altValue">2,500 ft</b></span><input id="altitude" type="range" min="500" max="12000" step="100" value="2500"></label>
+            <label class="range-row"><span>Starting speed <b id="speedValue">180 kt</b></span><input id="speed" type="range" min="0" max="420" step="5" value="180"></label>
+            <label class="range-row"><span>Heading <b id="headingValue">270°</b></span><input id="heading" type="range" min="0" max="359" value="270"></label>
+            <div class="field-title condition-title">AIRFRAME CONDITION <span>INTEGRITY</span></div>
+            <label class="range-row"><span>Structure <b id="conditionValue">100%</b></span><input id="condition" type="range" min="20" max="100" value="100"></label>
+            <label class="range-row"><span>Engine status <b class="good-status">NOMINAL</b></span><select id="engineCondition"><option value="nominal">Nominal</option><option value="degraded">Degraded</option><option value="failed">Failed</option></select></label>
+            <label class="range-row"><span>Passengers <b id="passengerValue">128</b></span><input id="passengers" type="range" min="0" max="320" value="128"></label>
+            <button class="confirm-button" id="confirmSpawn">PLACE AIRCRAFT <span>↗</span></button>
+          </div>
+        </div>
+        <div class="modal-foot"><span>⌖ SPAWNS 1.8 KM FROM CURRENT CAMERA</span><span>ESC TO CLOSE</span></div>
+      </section>
+    </div>
+    <div class="help-panel" id="helpPanel"><button class="close-help" id="closeHelp">×</button><strong>FLIGHT DECK CONTROLS</strong><p><kbd>W A S D</kbd> Move camera · <kbd>Q / E</kbd> Rise / descend</p><p><kbd>DRAG</kbd> Orbit · <kbd>SCROLL</kbd> Zoom · <kbd>F</kbd> Spawn</p><p>Click an aircraft to select it. In inspector, use <b>Take control</b> to pilot selected aircraft. <b>Space</b> applies throttle, <b>↑ ↓</b> pitch, <b>← →</b> bank.</p></div>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
